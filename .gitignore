@@ -1,0 +1,16 @@
+# Секреты
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Docker данных базы (если создавал папку локально)
+pgdata/
+
+# IDE
+.idea/
+.vscode/
