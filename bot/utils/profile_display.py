@@ -24,7 +24,20 @@ async def send_profile_card(
             return
         except TelegramBadRequest as exc:
             if not _is_invalid_photo_error(exc):
-                raise
+                try:
+                    await message.delete()
+                except TelegramBadRequest:
+                    pass
+                try:
+                    await message.answer_photo(
+                        photo=photo_file_id,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                    )
+                    return
+                except TelegramBadRequest as resend_exc:
+                    if not _is_invalid_photo_error(resend_exc):
+                        raise
             await message.delete()
             await message.answer(fallback_caption, reply_markup=reply_markup)
             return

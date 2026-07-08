@@ -49,7 +49,7 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
             await session.rollback()
             logging.error(f"Ошибка при сохранении в БД: {e}")
 
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, aliased
 
 async def get_user_with_settings(telegram_id: int) -> User | None:
     """Получает пользователя вместе с его настройками поиска (1-к-1)"""
@@ -150,32 +150,36 @@ async def add_swipe(from_user_id: int, to_user_id: int, action: ActionType) -> b
     Возвращает True, если произошел взаимный мэтч (лайк в ответ на лайк).
     """
     async with session_maker() as session:
-        # Записываем свайп
-        swipe = Swipe(
-            from_user_id=from_user_id,
-            to_user_id=to_user_id,
-            action=action
+        stmt = select(Swipe).where(
+            Swipe.from_user_id == from_user_id,
+            Swipe.to_user_id == to_user_id,
         )
-        await session.merge(swipe)
+        swipe = (await session.execute(stmt)).scalar_one_or_none()
+        if swipe:
+            swipe.action = action
+            swipe.is_mutual = False
+        else:
+            swipe = Swipe(
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                action=action,
+            )
+            session.add(swipe)
 
         is_match = False
 
-        # Если это лайк, проверяем, лайкал ли этот человек нас ранее
         if action == ActionType.LIKE:
-            stmt = select(Swipe).where(
+            reverse_stmt = select(Swipe).where(
                 Swipe.from_user_id == to_user_id,
                 Swipe.to_user_id == from_user_id,
-                Swipe.action == ActionType.LIKE
+                Swipe.action == ActionType.LIKE,
             )
-            res = await session.execute(stmt)
-            reverse_swipe = res.scalar_one_or_none()
+            reverse_swipe = (await session.execute(reverse_stmt)).scalar_one_or_none()
 
             if reverse_swipe:
                 is_match = True
-                # Помечаем оба свайпа взаимными
                 swipe.is_mutual = True
                 reverse_swipe.is_mutual = True
-                await session.merge(reverse_swipe)
 
         await session.commit()
         return is_match
@@ -276,13 +280,20 @@ async def backfill_normalized_cities() -> int:
 
 async def get_match_partner_ids(user_id: int) -> list[int]:
     """Возвращает ID напарников с взаимными лайками (сначала новые)."""
+    reverse_swipe = aliased(Swipe)
     async with session_maker() as session:
         stmt = (
             select(Swipe.to_user_id)
+            .join(User, User.telegram_id == Swipe.to_user_id)
+            .join(
+                reverse_swipe,
+                (Swipe.to_user_id == reverse_swipe.from_user_id)
+                & (Swipe.from_user_id == reverse_swipe.to_user_id),
+            )
             .where(
                 Swipe.from_user_id == user_id,
                 Swipe.action == ActionType.LIKE,
-                Swipe.is_mutual == True,
+                reverse_swipe.action == ActionType.LIKE,
             )
             .order_by(Swipe.created_at.desc())
         )
