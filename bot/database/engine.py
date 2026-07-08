@@ -52,7 +52,6 @@ def _add_normalized_city_if_missing(connection):
             ON users (normalized_city)
         """))
         
-        connection.commit()
         print("Колонка normalized_city и индекс успешно добавлены")
         return True
     
