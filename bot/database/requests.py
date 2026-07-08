@@ -272,3 +272,32 @@ async def backfill_normalized_cities() -> int:
             await session.commit()
             logging.info(f"Заполнено normalized_city для {updated} пользователей.")
         return updated
+
+
+async def get_match_partner_ids(user_id: int) -> list[int]:
+    """Возвращает ID напарников с взаимными лайками (сначала новые)."""
+    async with session_maker() as session:
+        stmt = (
+            select(Swipe.to_user_id)
+            .where(
+                Swipe.from_user_id == user_id,
+                Swipe.action == ActionType.LIKE,
+                Swipe.is_mutual == True,
+            )
+            .order_by(Swipe.created_at.desc())
+        )
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_match_at_index(user_id: int, index: int) -> tuple[User | None, int]:
+    """Возвращает анкету мэтча по индексу и общее количество мэтчей."""
+    partner_ids = await get_match_partner_ids(user_id)
+    total = len(partner_ids)
+    if total == 0:
+        return None, 0
+
+    index = min(max(index, 0), total - 1)
+    async with session_maker() as session:
+        stmt = select(User).where(User.telegram_id == partner_ids[index])
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        return user, total

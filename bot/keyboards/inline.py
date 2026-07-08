@@ -26,6 +26,9 @@ class LikeBackCallback(CallbackData, prefix="lb"):
 class LikeNavCallback(CallbackData, prefix="ln"):
     index: int
 
+class MatchNavCallback(CallbackData, prefix="mt"):
+    index: int
+
 # Для подачи жалобы
 class ReportCallback(CallbackData, prefix="rep"):
     to_user_id: int
@@ -163,6 +166,22 @@ def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKe
         builder.adjust(nav_count, 2, 1)
     else:
         builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def get_match_keyboard(index: int, total: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if total > 1:
+        nav_count = 0
+        if index > 0:
+            builder.button(text="⬅️", callback_data=MatchNavCallback(index=index - 1).pack())
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="matches_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(text="➡️", callback_data=MatchNavCallback(index=index + 1).pack())
+            nav_count += 1
+        builder.adjust(nav_count)
     return builder.as_markup()
 
 

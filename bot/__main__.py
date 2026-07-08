@@ -7,7 +7,7 @@ from bot.config import BOT_TOKEN
 from bot.database.engine import init_models
 
 # Импортируем все наши обработчики (хэндлеры)
-from bot.handlers import start, register, settings, profile, swiping, likes, report
+from bot.handlers import start, register, settings, profile, swiping, likes, report, matches
 
 
 async def main():
@@ -42,6 +42,7 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(swiping.router)
     dp.include_router(likes.router)
+    dp.include_router(matches.router)
     dp.include_router(report.router)
 
     # 5. Запуск опроса серверов Telegram (polling)
