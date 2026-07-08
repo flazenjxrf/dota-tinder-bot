@@ -2,6 +2,7 @@ import logging
 from sqlalchemy import select
 from bot.database.engine import session_maker
 from bot.database.models import User, SearchSettings, ProfileStatus
+from bot.utils.city_normalizer import normalize_city
 
 
 async def save_user_and_settings(telegram_id: int, username: str | None, data: dict):
@@ -12,12 +13,16 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
     async with session_maker() as session:
         try:
             # 1. Создаем или обновляем пользователя
+            city = data.get('city')
+            normalized_city = normalize_city(city) if city else None
+            
             user = User(
                 telegram_id=telegram_id,
                 username=username,
                 name=data['name'],
                 age=data['age'],
-                city=data['city'],
+                city=city,
+                normalized_city=normalized_city,
                 mmr=data['mmr'],
                 positions=data['positions'],
                 bio=data['bio'],
@@ -63,7 +68,12 @@ async def update_user_field(telegram_id: int, field_name: str, value):
         result = await session.execute(stmt)
         user = result.scalar_one_or_none()
         if user:
-            setattr(user, field_name, value)
+            # Если обновляем город, нормализуем его
+            if field_name == "city":
+                setattr(user, field_name, value)
+                setattr(user, "normalized_city", normalize_city(value) if value else None)
+            else:
+                setattr(user, field_name, value)
             await session.commit()
 
 async def update_settings_field(telegram_id: int, field_name: str, value):
@@ -119,13 +129,13 @@ async def get_next_profile(user_id: int) -> User | None:
                 User.telegram_id != user_id,
                 not_(swipe_exists),
             )
-            if same_city and current_user and current_user.city:
-                stmt = stmt.where(func.lower(User.city) == func.lower(current_user.city))
+            if same_city and current_user and current_user.normalized_city:
+                stmt = stmt.where(User.normalized_city == current_user.normalized_city)
             stmt = _apply_search_filters(stmt, settings)
             return stmt.order_by(func.random()).limit(1)
 
         for same_city in (True, False):
-            if same_city and (not current_user or not current_user.city):
+            if same_city and (not current_user or not current_user.normalized_city):
                 continue
             result = await session.execute(build_query(same_city=same_city))
             profile = result.scalar_one_or_none()

@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint
+from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 import enum
@@ -35,6 +35,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(50))
     age: Mapped[int] = mapped_column(Integer)
     city: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    normalized_city: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     mmr: Mapped[int] = mapped_column(Integer)
     positions: Mapped[list[int]] = mapped_column(ARRAY(Integer))
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -44,6 +45,10 @@ class User(Base):
 
     # Связь с таблицей настроек
     settings = relationship("SearchSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('ix_users_normalized_city', 'normalized_city'),
+    )
 
 
 class SearchSettings(Base):
