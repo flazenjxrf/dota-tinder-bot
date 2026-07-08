@@ -19,3 +19,6 @@ if not DATABASE_URL:
     PG_PORT = os.getenv("POSTGRES_PORT", "5432")
     
     DATABASE_URL = f"postgresql+asyncpg://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+else:
+    # Заменяем postgresql:// на postgresql+asyncpg:// для асинхронного драйвера
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
