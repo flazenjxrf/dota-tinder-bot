@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import get_match_at_index
 from bot.keyboards.inline import get_match_keyboard, MatchNavCallback
+from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.profile_display import send_profile_card
 from bot.utils.match import get_user_link
 
@@ -28,9 +29,9 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
         )
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
-            await message_or_callback.message.answer(text)
+            await message_or_callback.message.answer(text, reply_markup=get_main_menu_keyboard())
         else:
-            await message_or_callback.answer(text)
+            await message_or_callback.answer(text, reply_markup=get_main_menu_keyboard())
         return
 
     actual_index = min(max(index, 0), total - 1)

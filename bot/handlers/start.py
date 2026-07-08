@@ -1,12 +1,12 @@
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
 # Импортируем запросы к БД, статусы и клавиатуры
 from bot.database.requests import get_user_with_settings
 from bot.database.models import ProfileStatus
 from bot.keyboards.inline import get_start_keyboard
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.keyboards.reply import get_main_menu_keyboard, refresh_main_menu
 
 # Объявляем роутер, который искал Python
 router = Router()
@@ -33,3 +33,12 @@ async def cmd_start(message: Message):
         "Мой ютуб: youtube.com/@flazenjxrf"
     )
     await message.answer(text, reply_markup=get_start_keyboard())
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message):
+    user = await get_user_with_settings(message.from_user.id)
+    if not user or user.status == ProfileStatus.INCOMPLETE:
+        await message.answer("Сначала заполни анкету через /start")
+        return
+    await refresh_main_menu(message, "Главное меню 👇")

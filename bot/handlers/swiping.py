@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from bot.database.requests import get_next_profile, add_swipe, get_user_with_settings, get_pending_likes_count
 from bot.database.models import ActionType, ProfileStatus
 from bot.keyboards.inline import get_swipe_keyboard, SwipeCallback
+from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.profile_display import send_profile_card
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 
@@ -44,9 +45,9 @@ async def show_next_profile(message_or_callback, user_id: int):
         text = "🎯 <b>Подходящие анкеты закончились!</b>\n\nПопробуй расширить фильтры поиска в меню 👤 Моя анкета -> Фильтры поиска."
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
-            await message_or_callback.message.answer(text)
+            await message_or_callback.message.answer(text, reply_markup=get_main_menu_keyboard())
         else:
-            await message_or_callback.answer(text)
+            await message_or_callback.answer(text, reply_markup=get_main_menu_keyboard())
         return
 
     # Красиво форматируем анкету напарника
@@ -80,7 +81,7 @@ async def start_swiping(message: Message, state: FSMContext):
         return
 
     if user.status == ProfileStatus.HIDDEN:
-        await message.answer(HIDDEN_PROFILE_MSG)
+        await message.answer(HIDDEN_PROFILE_MSG, reply_markup=get_main_menu_keyboard())
         return
 
     await show_next_profile(message, message.from_user.id)
