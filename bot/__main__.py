@@ -7,7 +7,7 @@ from bot.config import BOT_TOKEN
 from bot.database.engine import init_models
 
 # Импортируем все наши обработчики (хэндлеры)
-from bot.handlers import start, register, settings, profile, swiping, likes
+from bot.handlers import start, register, settings, profile, swiping, likes, report
 
 
 async def main():
@@ -41,7 +41,8 @@ async def main():
     dp.include_router(settings.router)
     dp.include_router(profile.router)
     dp.include_router(swiping.router)
-    dp.include_router(likes.router)  # <-- Подключили роутер входящих лайков
+    dp.include_router(likes.router)
+    dp.include_router(report.router)
 
     # 5. Запуск опроса серверов Telegram (polling)
     try:

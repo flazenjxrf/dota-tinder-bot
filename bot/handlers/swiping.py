@@ -1,10 +1,11 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from bot.database.requests import get_next_profile, add_swipe, get_user_with_settings
-from bot.database.models import ActionType
+from bot.database.requests import get_next_profile, add_swipe, get_user_with_settings, get_pending_likes_count
+from bot.database.models import ActionType, ProfileStatus
 from bot.keyboards.inline import get_swipe_keyboard, SwipeCallback
+from bot.utils.profile_display import send_profile_card
 
 router = Router()
 
@@ -14,6 +15,24 @@ positions_mapping = {
     3: "Тройка",
     4: "Саппорт"
 }
+
+HIDDEN_PROFILE_MSG = (
+    "🔴 <b>Твоя анкета скрыта.</b>\n\n"
+    "Чтобы смотреть чужие анкеты, включи её: 👤 Моя анкета → Показать анкету."
+)
+
+LIKE_NOTIFY_THRESHOLDS = {1, 5, 20}
+
+
+def format_pending_likes_notification(count: int) -> str:
+    if count == 1:
+        likes_text = "1 неотвеченный лайк"
+    else:
+        likes_text = f"{count} неотвеченных лайков"
+    return (
+        f"🔔 <b>У тебя {likes_text}!</b>\n\n"
+        f"Загляни во вкладку <b>❤️ Мои лайки</b>, чтобы посмотреть анкеты."
+    )
 
 
 def get_user_link(user_id: int, name: str, username: str | None) -> str:
@@ -47,20 +66,12 @@ async def show_next_profile(message_or_callback, user_id: int):
         f"💬 О себе:\n{next_user.bio}"
     )
 
-    if isinstance(message_or_callback, CallbackQuery):
-        # Бесшовно меняем фото и текст на новые прямо в том же сообщении!
-        media = InputMediaPhoto(media=next_user.photo_file_id, caption=caption, parse_mode="HTML")
-        await message_or_callback.message.edit_media(
-            media=media,
-            reply_markup=get_swipe_keyboard(next_user.telegram_id)
-        )
-    else:
-        # Отправляем новую карточку
-        await message_or_callback.answer_photo(
-            photo=next_user.photo_file_id,
-            caption=caption,
-            reply_markup=get_swipe_keyboard(next_user.telegram_id)
-        )
+    await send_profile_card(
+        message_or_callback,
+        next_user.photo_file_id,
+        caption,
+        get_swipe_keyboard(next_user.telegram_id),
+    )
 
 
 # ================= КНОПКА "СМОТРЕТЬ АНКЕТЫ" В ГЛАВНОМ МЕНЮ =================
@@ -74,6 +85,10 @@ async def start_swiping(message: Message, state: FSMContext):
         await message.answer("Сначала заполни свою анкету!")
         return
 
+    if user.status == ProfileStatus.HIDDEN:
+        await message.answer(HIDDEN_PROFILE_MSG)
+        return
+
     await show_next_profile(message, message.from_user.id)
 
 
@@ -81,6 +96,14 @@ async def start_swiping(message: Message, state: FSMContext):
 @router.callback_query(SwipeCallback.filter())
 async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback):
     from_user_id = callback.from_user.id
+    user = await get_user_with_settings(from_user_id)
+    if not user or user.status == ProfileStatus.HIDDEN:
+        await callback.answer(
+            "Твоя анкета скрыта. Включи её, чтобы смотреть анкеты.",
+            show_alert=True
+        )
+        return
+
     to_user_id = callback_data.to_user_id
     action = ActionType.LIKE if callback_data.action == "like" else ActionType.DISLIKE
 
@@ -113,15 +136,17 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback):
         except Exception:
             pass
 
-    # --- НОВОЕ: Одиночный лайк -> Уведомление напарнику ---
+    # Одиночный лайк -> уведомление только при 1, 5 и 20 неотвеченных лайках
     elif action == ActionType.LIKE:
-        try:
-            await callback.bot.send_message(
-                chat_id=to_user_id,
-                text="🔔 <b>У вас новый лайк!</b>\n\nКто-то заинтересовался твоим профилем. Загляни во вкладку <b>❤️ Мои лайки</b>, чтобы узнать кто это!"
-            )
-        except Exception:
-            pass
+        pending_count = await get_pending_likes_count(to_user_id)
+        if pending_count in LIKE_NOTIFY_THRESHOLDS:
+            try:
+                await callback.bot.send_message(
+                    chat_id=to_user_id,
+                    text=format_pending_likes_notification(pending_count),
+                )
+            except Exception:
+                pass
 
     await callback.answer()
 

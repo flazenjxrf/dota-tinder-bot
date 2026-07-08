@@ -1,10 +1,11 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import get_next_pending_like, add_swipe, get_user_with_settings
 from bot.database.models import ActionType
 from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback
+from bot.utils.profile_display import send_profile_card
 
 router = Router()
 
@@ -45,18 +46,12 @@ async def show_next_pending_like_profile(message_or_callback, user_id: int):
         f"💬 О себе:\n{next_user.bio}"
     )
 
-    if isinstance(message_or_callback, CallbackQuery):
-        media = InputMediaPhoto(media=next_user.photo_file_id, caption=caption, parse_mode="HTML")
-        await message_or_callback.message.edit_media(
-            media=media,
-            reply_markup=get_likeback_keyboard(next_user.telegram_id)
-        )
-    else:
-        await message_or_callback.answer_photo(
-            photo=next_user.photo_file_id,
-            caption=caption,
-            reply_markup=get_likeback_keyboard(next_user.telegram_id)
-        )
+    await send_profile_card(
+        message_or_callback,
+        next_user.photo_file_id,
+        caption,
+        get_likeback_keyboard(next_user.telegram_id),
+    )
 
 
 # ================= КНОПКА "МОИ ЛАЙКИ" В ГЛАВНОМ МЕНЮ =================

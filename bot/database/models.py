@@ -19,6 +19,14 @@ class ActionType(enum.Enum):
     DISLIKE = "dislike"
 
 
+class ReportReason(enum.Enum):
+    INAPPROPRIATE_PHOTO = "inappropriate_photo"
+    SPAM = "spam"
+    OFFENSIVE = "offensive"
+    FAKE = "fake"
+    OTHER = "other"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -64,4 +72,17 @@ class Swipe(Base):
     to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     action: Mapped[ActionType] = mapped_column(Enum(ActionType))
     is_mutual: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class Report(Base):
+    __tablename__ = "reports"
+    __table_args__ = (
+        UniqueConstraint("from_user_id", "to_user_id", name="uq_report_from_to"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    from_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    reason: Mapped[ReportReason] = mapped_column(Enum(ReportReason))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

@@ -22,6 +22,16 @@ class LikeBackCallback(CallbackData, prefix="lb"):
     action: str  # "like" или "dislike"
     from_user_id: int
 
+# Для подачи жалобы
+class ReportCallback(CallbackData, prefix="rep"):
+    to_user_id: int
+    context: str  # "swipe" или "likes"
+
+class ReportReasonCallback(CallbackData, prefix="rep_r"):
+    to_user_id: int
+    context: str
+    reason: str
+
 
 # ================= 2. КЛАВИАТУРЫ РЕГИСТРАЦИИ И ПОИСКА =================
 
@@ -102,16 +112,43 @@ def get_edit_settings_fields_keyboard() -> InlineKeyboardMarkup:
 
 # ================= 4. КЛАВИАТУРЫ СВАЙПОВ И ЛАЙКОВ =================
 
+REPORT_REASON_LABELS = {
+    "inappropriate_photo": "📷 Неприемлемое фото",
+    "spam": "📢 Спам / реклама",
+    "offensive": "💬 Оскорбления в анкете",
+    "fake": "🎭 Фейковая анкета",
+    "other": "❓ Другое",
+}
+
+
 def get_swipe_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="👎 Дизлайк", callback_data=SwipeCallback(action="dislike", to_user_id=to_user_id).pack())
     builder.button(text="❤️ Лайк", callback_data=SwipeCallback(action="like", to_user_id=to_user_id).pack())
-    builder.adjust(2)
+    builder.button(text="🚨 Жалоба", callback_data=ReportCallback(to_user_id=to_user_id, context="swipe").pack())
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 def get_likeback_keyboard(from_user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="👎 Дизлайк", callback_data=LikeBackCallback(action="dislike", from_user_id=from_user_id).pack())
     builder.button(text="❤️ Лайк в ответ", callback_data=LikeBackCallback(action="like", from_user_id=from_user_id).pack())
-    builder.adjust(2)
+    builder.button(text="🚨 Жалоба", callback_data=ReportCallback(to_user_id=from_user_id, context="likes").pack())
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def get_report_reasons_keyboard(to_user_id: int, context: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for reason_key, label in REPORT_REASON_LABELS.items():
+        builder.button(
+            text=label,
+            callback_data=ReportReasonCallback(
+                to_user_id=to_user_id,
+                context=context,
+                reason=reason_key,
+            ).pack(),
+        )
+    builder.button(text="⬅️ Отмена", callback_data="report_cancel")
+    builder.adjust(1)
     return builder.as_markup()
