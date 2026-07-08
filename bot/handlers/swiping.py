@@ -6,6 +6,7 @@ from bot.database.requests import get_next_profile, add_swipe, get_user_with_set
 from bot.database.models import ActionType, ProfileStatus
 from bot.keyboards.inline import get_swipe_keyboard, SwipeCallback
 from bot.utils.profile_display import send_profile_card
+from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 
 router = Router()
 
@@ -33,13 +34,6 @@ def format_pending_likes_notification(count: int) -> str:
         f"🔔 <b>У тебя {likes_text}!</b>\n\n"
         f"Загляни во вкладку <b>❤️ Мои лайки</b>, чтобы посмотреть анкеты."
     )
-
-
-def get_user_link(user_id: int, name: str, username: str | None) -> str:
-    """Возвращает кликабельное имя пользователя (через @ или ссылку на ID)"""
-    if username:
-        return f"@{username}"
-    return f'<a href="tg://user?id={user_id}">{name}</a>'
 
 
 async def show_next_profile(message_or_callback, user_id: int):
@@ -118,20 +112,20 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback):
         my_link = get_user_link(from_user_id, me.name, callback.from_user.username)
         other_link = get_user_link(to_user_id, other.name, other.username)
 
-        await callback.message.answer(
-            f"🎉 <b>Взаимная симпатия!</b>\n\n"
-            f"Ты понравился игроку {other_link} в ответ!\n"
-            f"Свяжись с ним и сыграйте катку! 🎮"
+        await send_match_notification_via_message(
+            callback.message,
+            f"Ты понравился игроку {other_link} в ответ!",
+            other,
+            other_link,
         )
 
         try:
-            await callback.bot.send_message(
-                chat_id=to_user_id,
-                text=(
-                    f"🎉 <b>Взаимная симпатия!</b>\n\n"
-                    f"Игрок {my_link} ответил тебе взаимностью!\n"
-                    f"Напиши ему и соберите пати! 🎮"
-                )
+            await send_match_notification(
+                callback.bot,
+                to_user_id,
+                f"Игрок {my_link} ответил тебе взаимностью!",
+                me,
+                my_link,
             )
         except Exception:
             pass

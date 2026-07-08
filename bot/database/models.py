@@ -35,6 +35,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(50))
     age: Mapped[int] = mapped_column(Integer)
     city: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    normalized_city: Mapped[str | None] = mapped_column(String(50), nullable=True)
     mmr: Mapped[int] = mapped_column(Integer)
     positions: Mapped[list[int]] = mapped_column(ARRAY(Integer))
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)

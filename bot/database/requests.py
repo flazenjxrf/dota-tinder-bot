@@ -1,7 +1,8 @@
 import logging
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from bot.database.engine import session_maker
 from bot.database.models import User, SearchSettings, ProfileStatus
+from bot.utils.city import normalize_city, get_normalized_city
 
 
 async def save_user_and_settings(telegram_id: int, username: str | None, data: dict):
@@ -18,6 +19,7 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
                 name=data['name'],
                 age=data['age'],
                 city=data['city'],
+                normalized_city=normalize_city(data['city']),
                 mmr=data['mmr'],
                 positions=data['positions'],
                 bio=data['bio'],
@@ -64,6 +66,8 @@ async def update_user_field(telegram_id: int, field_name: str, value):
         user = result.scalar_one_or_none()
         if user:
             setattr(user, field_name, value)
+            if field_name == "city":
+                user.normalized_city = normalize_city(value)
             await session.commit()
 
 async def update_settings_field(telegram_id: int, field_name: str, value):
@@ -119,13 +123,18 @@ async def get_next_profile(user_id: int) -> User | None:
                 User.telegram_id != user_id,
                 not_(swipe_exists),
             )
-            if same_city and current_user and current_user.city:
-                stmt = stmt.where(func.lower(User.city) == func.lower(current_user.city))
+            if same_city and current_user:
+                normalized = get_normalized_city(current_user.city, current_user.normalized_city)
+                if normalized:
+                    stmt = stmt.where(User.normalized_city == normalized)
             stmt = _apply_search_filters(stmt, settings)
             return stmt.order_by(func.random()).limit(1)
 
         for same_city in (True, False):
-            if same_city and (not current_user or not current_user.city):
+            if same_city and not get_normalized_city(
+                current_user.city if current_user else None,
+                current_user.normalized_city if current_user else None,
+            ):
                 continue
             result = await session.execute(build_query(same_city=same_city))
             profile = result.scalar_one_or_none()
@@ -196,17 +205,35 @@ async def get_pending_likes_count(user_id: int) -> int:
         return (await session.execute(stmt)).scalar_one()
 
 
-async def get_next_pending_like(user_id: int) -> User | None:
-    """Получает следующего пользователя, который лайкнул нашего юзера (включая скрытые анкеты)"""
+async def get_pending_likes_ids(user_id: int) -> list[int]:
+    """Возвращает ID пользователей с неотвеченными лайками (сначала новые)."""
     async with session_maker() as session:
         stmt = (
-            select(User)
+            select(User.telegram_id)
             .join(Swipe, Swipe.from_user_id == User.telegram_id)
             .where(*_pending_likes_conditions(user_id))
-            .limit(1)
+            .order_by(Swipe.created_at.desc())
         )
-        res = await session.execute(stmt)
-        return res.scalar_one_or_none()
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_next_pending_like(user_id: int) -> User | None:
+    """Получает первого пользователя из списка неотвеченных лайков."""
+    return await get_pending_like_at_index(user_id, 0)
+
+
+async def get_pending_like_at_index(user_id: int, index: int) -> tuple[User | None, int]:
+    """Возвращает анкету по индексу и общее количество неотвеченных лайков."""
+    liker_ids = await get_pending_likes_ids(user_id)
+    total = len(liker_ids)
+    if total == 0:
+        return None, 0
+
+    index = min(max(index, 0), total - 1)
+    async with session_maker() as session:
+        stmt = select(User).where(User.telegram_id == liker_ids[index])
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        return user, total
 
 
 async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -> bool:
@@ -226,3 +253,22 @@ async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -
         ))
         await session.commit()
         return True
+
+
+async def backfill_normalized_cities() -> int:
+    """Заполняет normalized_city у пользователей, у которых поле пустое."""
+    async with session_maker() as session:
+        stmt = select(User).where(
+            User.city.isnot(None),
+            User.city != "",
+            or_(User.normalized_city.is_(None), User.normalized_city == ""),
+        )
+        users = (await session.execute(stmt)).scalars().all()
+        updated = 0
+        for user in users:
+            user.normalized_city = normalize_city(user.city)
+            updated += 1
+        if updated:
+            await session.commit()
+            logging.info(f"Заполнено normalized_city для {updated} пользователей.")
+        return updated

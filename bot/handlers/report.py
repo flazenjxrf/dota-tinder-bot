@@ -31,7 +31,11 @@ async def start_report(callback: CallbackQuery, callback_data: ReportCallback):
 
     await callback.message.answer(
         "🚨 <b>Подача жалобы</b>\n\nВыбери причину:",
-        reply_markup=get_report_reasons_keyboard(callback_data.to_user_id, callback_data.context),
+        reply_markup=get_report_reasons_keyboard(
+            callback_data.to_user_id,
+            callback_data.context,
+            callback_data.index,
+        ),
     )
     await callback.answer()
 
@@ -80,5 +84,5 @@ async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCall
         from bot.handlers.swiping import show_next_profile
         await show_next_profile(callback, from_user_id)
     else:
-        from bot.handlers.likes import show_next_pending_like_profile
-        await show_next_pending_like_profile(callback, from_user_id)
+        from bot.handlers.likes import show_pending_like_at_index
+        await show_pending_like_at_index(callback, from_user_id, callback_data.index)

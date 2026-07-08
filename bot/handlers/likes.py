@@ -2,10 +2,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from bot.database.requests import get_next_pending_like, add_swipe, get_user_with_settings
+from bot.database.requests import get_pending_like_at_index, add_swipe, get_user_with_settings
 from bot.database.models import ActionType
-from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback
+from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback, LikeNavCallback
 from bot.utils.profile_display import send_profile_card
+from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 
 router = Router()
 
@@ -17,18 +18,15 @@ positions_mapping = {
 }
 
 
-def get_user_link(user_id: int, name: str, username: str | None) -> str:
-    if username:
-        return f"@{username}"
-    return f'<a href="tg://user?id={user_id}">{name}</a>'
-
-
-async def show_next_pending_like_profile(message_or_callback, user_id: int):
-    """Показывает следующего человека, который лайкнул нашего юзера"""
-    next_user = await get_next_pending_like(user_id)
+async def show_pending_like_at_index(message_or_callback, user_id: int, index: int = 0):
+    """Показывает входящий лайк по индексу в списке."""
+    next_user, total = await get_pending_like_at_index(user_id, index)
 
     if not next_user:
-        text = "🎯 <b>Все входящие лайки просмотрены!</b>\n\nПока новых лайков нет. Но ты можешь поискать напарников во вкладке 🔍 Смотреть анкеты."
+        text = (
+            "🎯 <b>Все входящие лайки просмотрены!</b>\n\n"
+            "Пока новых лайков нет. Но ты можешь поискать напарников во вкладке 🔍 Смотреть анкеты."
+        )
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
             await message_or_callback.message.answer(text)
@@ -36,10 +34,11 @@ async def show_next_pending_like_profile(message_or_callback, user_id: int):
             await message_or_callback.answer(text)
         return
 
+    actual_index = min(max(index, 0), total - 1)
     pos_names = [positions_mapping[p] for p in sorted(next_user.positions)]
     pos_str = ", ".join(pos_names)
     caption = (
-        f"🔥 <b>Ты понравился этому игроку:</b>\n\n"
+        f"🔥 <b>Ты понравился этому игроку</b> ({actual_index + 1}/{total}):\n\n"
         f"🌟 <b>{next_user.name}</b>, {next_user.age} | 📍 {next_user.city}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {next_user.mmr}\n\n"
@@ -50,7 +49,7 @@ async def show_next_pending_like_profile(message_or_callback, user_id: int):
         message_or_callback,
         next_user.photo_file_id,
         caption,
-        get_likeback_keyboard(next_user.telegram_id),
+        get_likeback_keyboard(next_user.telegram_id, actual_index, total),
     )
 
 
@@ -58,20 +57,30 @@ async def show_next_pending_like_profile(message_or_callback, user_id: int):
 @router.message(F.text == "❤️ Мои лайки")
 async def start_viewing_likes(message: Message, state: FSMContext):
     await state.clear()
-    await show_next_pending_like_profile(message, message.from_user.id)
+    await show_pending_like_at_index(message, message.from_user.id, index=0)
+
+
+# ================= ЛИСТАНИЕ ЛАЙКОВ =================
+@router.callback_query(LikeNavCallback.filter())
+async def navigate_likes(callback: CallbackQuery, callback_data: LikeNavCallback):
+    await show_pending_like_at_index(callback, callback.from_user.id, callback_data.index)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "likes_counter")
+async def likes_counter_noop(callback: CallbackQuery):
+    await callback.answer()
 
 
 # ================= ОБРАБОТКА ВЗАИМНОГО ЛАЙКА / ДИЗЛАЙКА =================
 @router.callback_query(LikeBackCallback.filter())
 async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallback):
     from_user_id = callback.from_user.id
-    to_user_id = callback_data.from_user_id  # Тот, кто лайкнул нас изначально
+    to_user_id = callback_data.from_user_id
     action = ActionType.LIKE if callback_data.action == "like" else ActionType.DISLIKE
 
-    # 1. Записываем наш ответный свайп
     is_match = await add_swipe(from_user_id, to_user_id, action)
 
-    # 2. Если взаимно (всегда True при выборе Like в ответ)
     if is_match and action == ActionType.LIKE:
         me = await get_user_with_settings(from_user_id)
         other = await get_user_with_settings(to_user_id)
@@ -79,25 +88,23 @@ async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallb
         my_link = get_user_link(from_user_id, me.name, callback.from_user.username)
         other_link = get_user_link(to_user_id, other.name, other.username)
 
-        await callback.message.answer(
-            f"🎉 <b>Взаимная симпатия!</b>\n\n"
-            f"Ты ответил взаимностью игроку {other_link}!\n"
-            f"Свяжитесь и тащите катки! 🎮"
+        await send_match_notification_via_message(
+            callback.message,
+            f"Ты ответил взаимностью игроку {other_link}!",
+            other,
+            other_link,
         )
 
         try:
-            await callback.bot.send_message(
-                chat_id=to_user_id,
-                text=(
-                    f"🎉 <b>Взаимная симпатия!</b>\n\n"
-                    f"Игрок {my_link} ответил тебе взаимностью в 'Моих лайках'!\n"
-                    f"Напиши ему прямо сейчас! 🎮"
-                )
+            await send_match_notification(
+                callback.bot,
+                to_user_id,
+                f"Игрок {my_link} ответил тебе взаимностью в «Моих лайках»!",
+                me,
+                my_link,
             )
         except Exception:
             pass
 
     await callback.answer()
-
-    # Показываем следующий входящий лайк
-    await show_next_pending_like_profile(callback, from_user_id)
+    await show_pending_like_at_index(callback, from_user_id, callback_data.index)

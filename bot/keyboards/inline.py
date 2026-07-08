@@ -21,16 +21,22 @@ class SwipeCallback(CallbackData, prefix="sw"):
 class LikeBackCallback(CallbackData, prefix="lb"):
     action: str  # "like" или "dislike"
     from_user_id: int
+    index: int = 0
+
+class LikeNavCallback(CallbackData, prefix="ln"):
+    index: int
 
 # Для подачи жалобы
 class ReportCallback(CallbackData, prefix="rep"):
     to_user_id: int
     context: str  # "swipe" или "likes"
+    index: int = 0
 
 class ReportReasonCallback(CallbackData, prefix="rep_r"):
     to_user_id: int
     context: str
     reason: str
+    index: int = 0
 
 
 # ================= 2. КЛАВИАТУРЫ РЕГИСТРАЦИИ И ПОИСКА =================
@@ -129,16 +135,38 @@ def get_swipe_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
     builder.adjust(2, 1)
     return builder.as_markup()
 
-def get_likeback_keyboard(from_user_id: int) -> InlineKeyboardMarkup:
+def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="👎 Дизлайк", callback_data=LikeBackCallback(action="dislike", from_user_id=from_user_id).pack())
-    builder.button(text="❤️ Лайк в ответ", callback_data=LikeBackCallback(action="like", from_user_id=from_user_id).pack())
-    builder.button(text="🚨 Жалоба", callback_data=ReportCallback(to_user_id=from_user_id, context="likes").pack())
-    builder.adjust(2, 1)
+    nav_count = 0
+    if total > 1:
+        if index > 0:
+            builder.button(text="⬅️", callback_data=LikeNavCallback(index=index - 1).pack())
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="likes_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(text="➡️", callback_data=LikeNavCallback(index=index + 1).pack())
+            nav_count += 1
+    builder.button(
+        text="👎 Дизлайк",
+        callback_data=LikeBackCallback(action="dislike", from_user_id=from_user_id, index=index).pack(),
+    )
+    builder.button(
+        text="❤️ Лайк в ответ",
+        callback_data=LikeBackCallback(action="like", from_user_id=from_user_id, index=index).pack(),
+    )
+    builder.button(
+        text="🚨 Жалоба",
+        callback_data=ReportCallback(to_user_id=from_user_id, context="likes", index=index).pack(),
+    )
+    if total > 1:
+        builder.adjust(nav_count, 2, 1)
+    else:
+        builder.adjust(2, 1)
     return builder.as_markup()
 
 
-def get_report_reasons_keyboard(to_user_id: int, context: str) -> InlineKeyboardMarkup:
+def get_report_reasons_keyboard(to_user_id: int, context: str, index: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for reason_key, label in REPORT_REASON_LABELS.items():
         builder.button(
@@ -147,6 +175,7 @@ def get_report_reasons_keyboard(to_user_id: int, context: str) -> InlineKeyboard
                 to_user_id=to_user_id,
                 context=context,
                 reason=reason_key,
+                index=index,
             ).pack(),
         )
     builder.button(text="⬅️ Отмена", callback_data="report_cancel")
