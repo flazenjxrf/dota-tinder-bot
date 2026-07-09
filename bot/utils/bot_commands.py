@@ -15,7 +15,10 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_RULES, description="📜 Правила"),
 ]
 
-MENU_HINT = "Открой меню команд — кнопка «Меню» слева от поля ввода 👇"
+MENU_HINT = (
+    "Все разделы — в кнопке «Меню» слева от поля ввода 👇\n"
+    "/browse · /profile · /likes · /matches · /rules"
+)
 
 
 def normalize_command(text: str | None) -> str | None:

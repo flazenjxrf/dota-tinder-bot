@@ -8,11 +8,12 @@ from bot.database.engine import init_models
 from bot.database.requests import get_all_consented_ids, get_all_banned_ids
 from bot.middleware.consent import ConsentMiddleware
 from bot.middleware.ban import BanMiddleware
+from bot.middleware.keyboard import RemoveKeyboardMiddleware
 from bot.services import consent_cache, ban_cache
 from bot.utils.bot_commands import setup_bot_commands
 
 # Импортируем все наши обработчики (хэндлеры)
-from bot.handlers import start, register, settings, profile, swiping, likes, report, matches, admin, fallback
+from bot.handlers import start, legacy_menu, register, settings, profile, swiping, likes, report, matches, admin, fallback
 
 
 async def main():
@@ -70,9 +71,12 @@ async def main():
     dp.callback_query.middleware(BanMiddleware())
     dp.message.middleware(ConsentMiddleware())
     dp.callback_query.middleware(ConsentMiddleware())
+    dp.message.middleware(RemoveKeyboardMiddleware())
+    dp.callback_query.middleware(RemoveKeyboardMiddleware())
 
     # 4. Подключение роутеров к диспетчеру (порядок важен)
     dp.include_router(start.router)
+    dp.include_router(legacy_menu.router)
     dp.include_router(register.router)
     dp.include_router(settings.router)
     dp.include_router(profile.router)

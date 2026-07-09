@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import get_user_with_settings
 from bot.database.models import ProfileStatus
+from bot.keyboards.reply import REMOVE_KEYBOARD
 from bot.utils.bot_commands import MENU_HINT
 
 router = Router()
@@ -22,4 +23,4 @@ async def restore_menu_on_unknown_text(message: Message, state: FSMContext):
     if not user or user.status == ProfileStatus.INCOMPLETE:
         return
 
-    await message.answer(MENU_HINT)
+    await message.answer(MENU_HINT, reply_markup=REMOVE_KEYBOARD)
