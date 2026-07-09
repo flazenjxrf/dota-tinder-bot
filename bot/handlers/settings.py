@@ -136,3 +136,5 @@ async def finish_registration(user, message_obj: Message, state: FSMContext):
         f"Теперь ты можешь искать тимейтов. {MENU_HINT}",
         reply_markup=REMOVE_KEYBOARD,
     )
+    from bot.middleware.keyboard import mark_keyboard_cleared
+    mark_keyboard_cleared(user.id)

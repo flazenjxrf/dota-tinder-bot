@@ -24,3 +24,5 @@ async def restore_menu_on_unknown_text(message: Message, state: FSMContext):
         return
 
     await message.answer(MENU_HINT, reply_markup=REMOVE_KEYBOARD)
+    from bot.middleware.keyboard import mark_keyboard_cleared
+    mark_keyboard_cleared(message.from_user.id)

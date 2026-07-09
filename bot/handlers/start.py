@@ -56,6 +56,8 @@ async def cmd_start(message: Message):
             "Привет! С возвращением в Dota Tinder!\n\n" + MENU_HINT,
             reply_markup=REMOVE_KEYBOARD,
         )
+        from bot.middleware.keyboard import mark_keyboard_cleared
+        mark_keyboard_cleared(message.from_user.id)
         return
 
     if await has_user_consented(message.from_user.id):

@@ -90,8 +90,11 @@ async def main():
     # 5. Запуск опроса серверов Telegram (polling)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        await setup_bot_commands(bot)
-        logger.info("Меню команд Telegram настроено")
+        try:
+            await setup_bot_commands(bot)
+            logger.info("Меню команд Telegram настроено")
+        except Exception as e:
+            logger.warning("Не удалось настроить меню команд: %s", e)
         logger.info("Бот начал принимать сообщения (Polling запущен) 🚀")
         await dp.start_polling(bot)
     finally:
