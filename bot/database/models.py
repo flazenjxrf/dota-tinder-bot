@@ -91,8 +91,19 @@ class Report(Base):
 
 
 class UserConsent(Base):
-    __tablename__ = "user_consents"
+    """Журнал согласий. Записи не удаляются — каждое согласие фиксируется отдельно."""
+    __tablename__ = "user_consent_log"
 
-    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     username: Mapped[str | None] = mapped_column(String, nullable=True)
     consented_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class ProfileDeletion(Base):
+    """Журнал удалений анкет — для повторного запроса согласия."""
+    __tablename__ = "profile_deletions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    deleted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

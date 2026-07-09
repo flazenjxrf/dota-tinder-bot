@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy import select, or_
 from bot.database.engine import session_maker
-from bot.database.models import User, SearchSettings, ProfileStatus, UserConsent
+from bot.database.models import User, SearchSettings, ProfileStatus, UserConsent, ProfileDeletion
 from bot.utils.city import normalize_city, get_normalized_city
 
 
@@ -50,6 +50,35 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
             logging.error(f"Ошибка при сохранении в БД: {e}")
 
 from sqlalchemy.orm import selectinload, aliased
+from sqlalchemy import func
+
+
+async def _get_latest_consent_at(session, telegram_id: int):
+    stmt = (
+        select(func.max(UserConsent.consented_at))
+        .where(UserConsent.telegram_id == telegram_id)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _get_latest_deletion_at(session, telegram_id: int):
+    stmt = (
+        select(func.max(ProfileDeletion.deleted_at))
+        .where(ProfileDeletion.telegram_id == telegram_id)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _has_valid_consent(session, telegram_id: int) -> bool:
+    """Согласие действует, если последнее согласие новее последнего удаления анкеты."""
+    latest_consent = await _get_latest_consent_at(session, telegram_id)
+    if not latest_consent:
+        return False
+    latest_deletion = await _get_latest_deletion_at(session, telegram_id)
+    if latest_deletion is None:
+        return True
+    return latest_consent > latest_deletion
+
 
 async def get_user_with_settings(telegram_id: int) -> User | None:
     """Получает пользователя вместе с его настройками поиска (1-к-1)"""
@@ -60,28 +89,50 @@ async def get_user_with_settings(telegram_id: int) -> User | None:
 
 
 async def has_user_consented(telegram_id: int) -> bool:
-    """Проверяет, дал ли пользователь согласие на обработку данных."""
+    """Есть ли у пользователя действующее согласие на обработку данных."""
     from bot.services import consent_cache
     if consent_cache.has(telegram_id):
         return True
     async with session_maker() as session:
-        stmt = select(UserConsent.telegram_id).where(UserConsent.telegram_id == telegram_id)
-        found = (await session.execute(stmt)).scalar_one_or_none() is not None
-        if found:
+        if await _has_valid_consent(session, telegram_id):
             consent_cache.add(telegram_id)
-        return found
+            return True
+        return False
 
 
 async def get_all_consented_ids() -> list[int]:
+    """ID пользователей с действующим согласием (для прогрева кэша)."""
     async with session_maker() as session:
-        stmt = select(UserConsent.telegram_id)
-        return list((await session.execute(stmt)).scalars().all())
+        consent_stmt = (
+            select(UserConsent.telegram_id, func.max(UserConsent.consented_at).label("last_consent"))
+            .group_by(UserConsent.telegram_id)
+        )
+        consent_rows = (await session.execute(consent_stmt)).all()
+
+        deletion_stmt = (
+            select(
+                ProfileDeletion.telegram_id,
+                func.max(ProfileDeletion.deleted_at).label("last_deletion"),
+            )
+            .group_by(ProfileDeletion.telegram_id)
+        )
+        deletions = {
+            row.telegram_id: row.last_deletion
+            for row in (await session.execute(deletion_stmt)).all()
+        }
+
+        valid_ids: list[int] = []
+        for row in consent_rows:
+            last_deletion = deletions.get(row.telegram_id)
+            if last_deletion is None or row.last_consent > last_deletion:
+                valid_ids.append(row.telegram_id)
+        return valid_ids
 
 
 async def get_consent_gate_status(telegram_id: int) -> str:
     """
-    consented — согласие есть;
-    needs_gate — зарегистрированный пользователь без согласия;
+    consented — действующее согласие есть;
+    needs_gate — зарегистрированный пользователь без действующего согласия;
     exempt — новый или незавершивший регистрацию.
     """
     from bot.services import consent_cache
@@ -95,8 +146,7 @@ async def get_consent_gate_status(telegram_id: int) -> str:
         if status is None or status == ProfileStatus.INCOMPLETE:
             return "exempt"
 
-        consent_stmt = select(UserConsent.telegram_id).where(UserConsent.telegram_id == telegram_id)
-        if (await session.execute(consent_stmt)).scalar_one_or_none() is not None:
+        if await _has_valid_consent(session, telegram_id):
             consent_cache.add(telegram_id)
             return "consented"
 
@@ -104,21 +154,13 @@ async def get_consent_gate_status(telegram_id: int) -> str:
 
 
 async def record_user_consent(telegram_id: int, username: str | None) -> None:
-    """Сохраняет согласие пользователя (идемпотентно)."""
+    """Фиксирует новое согласие пользователя (каждое нажатие — отдельная запись)."""
     from bot.services import consent_cache
     async with session_maker() as session:
-        existing = await session.get(UserConsent, telegram_id)
-        if existing:
-            if username and existing.username != username:
-                existing.username = username
-                await session.commit()
-            consent_cache.add(telegram_id)
-            return
-
         session.add(UserConsent(telegram_id=telegram_id, username=username))
         await session.commit()
         consent_cache.add(telegram_id)
-        logging.info(f"Пользователь {telegram_id} дал согласие на обработку данных.")
+        logging.info(f"Зафиксировано согласие пользователя {telegram_id}.")
 
 async def update_user_field(telegram_id: int, field_name: str, value):
     """Обновляет одно конкретное поле в таблице users"""
@@ -134,14 +176,18 @@ async def update_user_field(telegram_id: int, field_name: str, value):
 
 
 async def delete_user_profile(telegram_id: int) -> bool:
-    """Удаляет анкету и связанные данные (настройки, свайпы, жалобы). Согласие сохраняется."""
+    """Удаляет анкету и связанные данные. Записи согласий сохраняются в журнале."""
+    from bot.services import consent_cache
     async with session_maker() as session:
         user = await session.get(User, telegram_id)
         if not user:
             return False
+
+        session.add(ProfileDeletion(telegram_id=telegram_id))
         await session.delete(user)
         await session.commit()
-        logging.info(f"Профиль пользователя {telegram_id} удалён.")
+        consent_cache.remove(telegram_id)
+        logging.info(f"Профиль пользователя {telegram_id} удалён, требуется новое согласие.")
         return True
 
 async def update_settings_field(telegram_id: int, field_name: str, value):

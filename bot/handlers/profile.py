@@ -20,8 +20,9 @@ from bot.keyboards.inline import (
     get_search_positions_keyboard,
     SearchPositionCallback,
     get_delete_profile_confirm_keyboard,
-    get_start_keyboard,
+    get_consent_keyboard,
 )
+from bot.handlers.start import CONSENT_TEXT
 from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.city import format_city_display
 
@@ -187,13 +188,10 @@ async def profile_delete_confirm(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "🗑 <b>Анкета удалена.</b>\n\n"
         "Мэтчи, лайки и все данные профиля удалены.\n"
-        "Чтобы снова искать напарников — нажми /start",
+        "Чтобы создать новую анкету, сначала прими соглашение:",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await callback.message.answer(
-        "Можешь создать новую анкету:",
-        reply_markup=get_start_keyboard(),
-    )
+    await callback.message.answer(CONSENT_TEXT, reply_markup=get_consent_keyboard())
     await callback.answer()
 
 
