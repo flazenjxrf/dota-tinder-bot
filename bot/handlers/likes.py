@@ -93,22 +93,19 @@ async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallb
         my_link = get_user_link(from_user_id, me.name, callback.from_user.username)
         other_link = get_user_link(to_user_id, other.name, other.username)
 
-        await send_match_notification_via_message(
-            callback.message,
-            f"Ты ответил взаимностью игроку {other_link}!",
-            other,
-            other_link,
-            viewer=me,
-        )
-
         try:
+            await send_match_notification_via_message(
+                callback.message,
+                f"Ты ответил взаимностью игроку {other_link}!",
+                other,
+                other_link,
+            )
             await send_match_notification(
                 callback.bot,
                 to_user_id,
                 f"Игрок {my_link} ответил тебе взаимностью в «Моих лайках»!",
                 me,
                 my_link,
-                viewer=other,
             )
         except Exception:
             pass

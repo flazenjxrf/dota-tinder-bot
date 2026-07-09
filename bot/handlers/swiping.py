@@ -115,7 +115,6 @@ async def process_like_notifications(
             f"Ты понравился игроку {other_link} в ответ!",
             other,
             other_link,
-            viewer=me,
         )
 
         try:
@@ -125,7 +124,6 @@ async def process_like_notifications(
                 f"Игрок {my_link} ответил тебе взаимностью!",
                 me,
                 my_link,
-                viewer=other,
             )
         except Exception:
             pass

@@ -51,6 +51,18 @@ class ReportReasonCallback(CallbackData, prefix="rep_r"):
     index: int = 0
 
 
+class AdminMenuCallback(CallbackData, prefix="adm"):
+    action: str  # "menu", "reports", "stats"
+
+class AdminReportNavCallback(CallbackData, prefix="adm_rn"):
+    index: int
+
+class AdminReportActionCallback(CallbackData, prefix="adm_act"):
+    action: str  # "reject", "ban"
+    report_id: int
+    index: int = 0
+
+
 # ================= 2. КЛАВИАТУРЫ РЕГИСТРАЦИИ И ПОИСКА =================
 
 def get_consent_keyboard() -> InlineKeyboardMarkup:
@@ -243,4 +255,75 @@ def get_report_reasons_keyboard(to_user_id: int, context: str, index: int = 0) -
         )
     builder.button(text="⬅️ Отмена", callback_data="report_cancel")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+# ================= 5. АДМИН-ПАНЕЛЬ =================
+
+def get_admin_menu_keyboard(pending_reports: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"🚨 Жалобы ({pending_reports})",
+        callback_data=AdminMenuCallback(action="reports").pack(),
+    )
+    builder.button(
+        text="📊 Статистика",
+        callback_data=AdminMenuCallback(action="stats").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_admin_reports_nav_keyboard(
+    report_id: int,
+    index: int,
+    total: int,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    nav_count = 0
+    if total > 1:
+        if index > 0:
+            builder.button(
+                text="⬅️",
+                callback_data=AdminReportNavCallback(index=index - 1).pack(),
+            )
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="admin_reports_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(
+                text="➡️",
+                callback_data=AdminReportNavCallback(index=index + 1).pack(),
+            )
+            nav_count += 1
+
+    builder.button(
+        text="❌ Отклонить жалобу",
+        callback_data=AdminReportActionCallback(
+            action="reject", report_id=report_id, index=index,
+        ).pack(),
+    )
+    builder.button(
+        text="🚫 Заблокировать пользователя",
+        callback_data=AdminReportActionCallback(
+            action="ban", report_id=report_id, index=index,
+        ).pack(),
+    )
+    builder.button(
+        text="⬅️ В админ-панель",
+        callback_data=AdminMenuCallback(action="menu").pack(),
+    )
+    if total > 1:
+        builder.adjust(nav_count, 1, 1, 1)
+    else:
+        builder.adjust(1, 1, 1)
+    return builder.as_markup()
+
+
+def get_admin_back_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="⬅️ В админ-панель",
+        callback_data=AdminMenuCallback(action="menu").pack(),
+    )
     return builder.as_markup()

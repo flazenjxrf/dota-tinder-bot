@@ -27,6 +27,12 @@ class ReportReason(enum.Enum):
     OTHER = "other"
 
 
+class ReportStatus(enum.Enum):
+    PENDING = "pending"
+    REJECTED = "rejected"
+    RESOLVED = "resolved"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -87,7 +93,21 @@ class Report(Base):
     from_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     reason: Mapped[ReportReason] = mapped_column(Enum(ReportReason))
+    status: Mapped[ReportStatus] = mapped_column(
+        Enum(ReportStatus, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+        default=ReportStatus.PENDING,
+    )
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class BannedUser(Base):
+    """Заблокированные пользователи. Запись сохраняется даже после удаления анкеты."""
+    __tablename__ = "banned_users"
+
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    banned_by: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    banned_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
 
 class UserConsent(Base):

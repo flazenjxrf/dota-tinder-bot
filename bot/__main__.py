@@ -5,12 +5,13 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import BOT_TOKEN
 from bot.database.engine import init_models
-from bot.database.requests import get_all_consented_ids
+from bot.database.requests import get_all_consented_ids, get_all_banned_ids
 from bot.middleware.consent import ConsentMiddleware
-from bot.services import consent_cache
+from bot.middleware.ban import BanMiddleware
+from bot.services import consent_cache, ban_cache
 
 # Импортируем все наши обработчики (хэндлеры)
-from bot.handlers import start, register, settings, profile, swiping, likes, report, matches, fallback
+from bot.handlers import start, register, settings, profile, swiping, likes, report, matches, admin, fallback
 
 
 async def main():
@@ -35,12 +36,18 @@ async def main():
     consent_cache.warm(consent_ids)
     logger.info("Кэш согласий загружен: %d пользователей", len(consent_ids))
 
+    banned_ids = await get_all_banned_ids()
+    ban_cache.warm(banned_ids)
+    logger.info("Кэш банов загружен: %d пользователей", len(banned_ids))
+
     # 3. Инициализация бота и диспетчера
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode="HTML")
     )
     dp = Dispatcher()
+    dp.message.middleware(BanMiddleware())
+    dp.callback_query.middleware(BanMiddleware())
     dp.message.middleware(ConsentMiddleware())
     dp.callback_query.middleware(ConsentMiddleware())
 
@@ -53,6 +60,7 @@ async def main():
     dp.include_router(likes.router)
     dp.include_router(matches.router)
     dp.include_router(report.router)
+    dp.include_router(admin.router)
     dp.include_router(fallback.router)
 
     # 5. Запуск опроса серверов Telegram (polling)

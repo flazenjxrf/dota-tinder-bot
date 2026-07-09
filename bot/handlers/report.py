@@ -62,17 +62,25 @@ async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCall
             return
 
     reason = ReportReason(callback_data.reason)
-    created = await add_report(from_user_id, to_user_id, reason)
+    report_id = await add_report(from_user_id, to_user_id, reason)
 
     await callback.message.delete()
 
-    if created:
+    if report_id:
         await add_swipe(from_user_id, to_user_id, ActionType.DISLIKE)
         reason_label = REPORT_REASON_LABELS[callback_data.reason]
         await callback.message.answer(
             f"✅ <b>Жалоба отправлена.</b>\n\n"
             f"Причина: {reason_label}\n"
             f"Мы рассмотрим её в ближайшее время."
+        )
+        from bot.handlers.admin import notify_admins_new_report
+        await notify_admins_new_report(
+            callback.bot,
+            report_id,
+            from_user_id,
+            to_user_id,
+            callback_data.reason,
         )
     else:
         await callback.message.answer(
@@ -83,7 +91,7 @@ async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCall
 
     if callback_data.context == "swipe":
         from bot.handlers.swiping import show_next_profile, set_undo_profile
-        if created:
+        if report_id:
             await set_undo_profile(state, to_user_id)
         await show_next_profile(callback, from_user_id, state=state)
     else:

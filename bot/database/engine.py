@@ -59,6 +59,20 @@ async def init_models():
             "CREATE INDEX IF NOT EXISTS idx_profile_deletions_telegram_id "
             "ON profile_deletions (telegram_id)"
         ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS banned_users (
+                telegram_id BIGINT PRIMARY KEY,
+                banned_by BIGINT NOT NULL,
+                reason TEXT,
+                banned_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+            )
+        """))
+        await conn.execute(text(
+            "ALTER TABLE reports ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'"
+        ))
+        await conn.execute(text(
+            "UPDATE reports SET status = 'pending' WHERE status IS NULL"
+        ))
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()

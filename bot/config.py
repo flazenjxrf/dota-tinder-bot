@@ -15,3 +15,13 @@ PG_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 # Формируем URL для подключения через asyncpg
 DATABASE_URL = f"postgresql+asyncpg://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+
+
+def _parse_admin_ids() -> frozenset[int]:
+    raw = os.getenv("ADMIN_IDS", "")
+    if not raw.strip():
+        return frozenset()
+    return frozenset(int(part.strip()) for part in raw.split(",") if part.strip())
+
+
+ADMIN_IDS = _parse_admin_ids()

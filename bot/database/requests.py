@@ -10,6 +10,9 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
     Сохраняет или обновляет анкету пользователя и его настройки поиска.
     data - это словарь со всеми ответами из машины состояний (FSM).
     """
+    if await is_user_banned(telegram_id):
+        logging.warning("Заблокированный пользователь %s попытался сохранить анкету.", telegram_id)
+        return
     async with session_maker() as session:
         try:
             # 1. Создаем или обновляем пользователя
@@ -155,6 +158,8 @@ async def get_consent_gate_status(telegram_id: int) -> str:
 
 async def record_user_consent(telegram_id: int, username: str | None) -> None:
     """Фиксирует новое согласие пользователя (каждое нажатие — отдельная запись)."""
+    if await is_user_banned(telegram_id):
+        return
     from bot.services import consent_cache
     async with session_maker() as session:
         session.add(UserConsent(telegram_id=telegram_id, username=username))
@@ -202,7 +207,7 @@ async def update_settings_field(telegram_id: int, field_name: str, value):
 
 
 from sqlalchemy import select, and_, not_, exists, func
-from bot.database.models import SearchSettings, Swipe, ActionType, Report, ReportReason
+from bot.database.models import SearchSettings, Swipe, ActionType, Report, ReportReason, ReportStatus, BannedUser
 from datetime import datetime
 
 DAILY_LIKE_MESSAGE_LIMIT = 5
@@ -424,23 +429,26 @@ async def get_pending_like_at_index(
         return user, total, message
 
 
-async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -> bool:
-    """Сохраняет жалобу. Возвращает True, если жалоба создана, False — если уже была."""
+async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -> int | None:
+    """Сохраняет жалобу. Возвращает ID новой жалобы или None, если уже была."""
     async with session_maker() as session:
         stmt = select(Report).where(
             Report.from_user_id == from_user_id,
             Report.to_user_id == to_user_id,
         )
         if (await session.execute(stmt)).scalar_one_or_none():
-            return False
+            return None
 
-        session.add(Report(
+        report = Report(
             from_user_id=from_user_id,
             to_user_id=to_user_id,
             reason=reason,
-        ))
+            status=ReportStatus.PENDING,
+        )
+        session.add(report)
         await session.commit()
-        return True
+        await session.refresh(report)
+        return report.id
 
 
 async def backfill_normalized_cities() -> int:
@@ -496,3 +504,121 @@ async def get_match_at_index(user_id: int, index: int) -> tuple[User | None, int
         stmt = select(User).where(User.telegram_id == partner_ids[index])
         user = (await session.execute(stmt)).scalar_one_or_none()
         return user, total
+
+
+# ================= Админ-панель и баны =================
+
+
+async def is_user_banned(telegram_id: int) -> bool:
+    from bot.services import ban_cache
+    if ban_cache.has(telegram_id):
+        return True
+    async with session_maker() as session:
+        banned = await session.get(BannedUser, telegram_id)
+        if banned:
+            ban_cache.add(telegram_id)
+            return True
+        return False
+
+
+async def get_all_banned_ids() -> list[int]:
+    async with session_maker() as session:
+        stmt = select(BannedUser.telegram_id)
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def ban_user(telegram_id: int, banned_by: int, reason: str | None = None) -> bool:
+    from bot.services import ban_cache
+    async with session_maker() as session:
+        if await session.get(BannedUser, telegram_id):
+            return False
+
+        session.add(BannedUser(
+            telegram_id=telegram_id,
+            banned_by=banned_by,
+            reason=reason,
+        ))
+
+        user = await session.get(User, telegram_id)
+        if user:
+            user.status = ProfileStatus.BANNED
+
+        pending_reports = (await session.execute(
+            select(Report).where(
+                Report.to_user_id == telegram_id,
+                Report.status == ReportStatus.PENDING,
+            )
+        )).scalars().all()
+        for report in pending_reports:
+            report.status = ReportStatus.RESOLVED
+
+        await session.commit()
+        ban_cache.add(telegram_id)
+        logging.info("Пользователь %s заблокирован админом %s.", telegram_id, banned_by)
+        return True
+
+
+async def get_profile_stats() -> dict[str, int]:
+    async with session_maker() as session:
+        stmt = (
+            select(User.status, func.count())
+            .group_by(User.status)
+        )
+        rows = (await session.execute(stmt)).all()
+        counts = {status.value: count for status, count in rows}
+        active = counts.get(ProfileStatus.ACTIVE.value, 0)
+        hidden = counts.get(ProfileStatus.HIDDEN.value, 0)
+        banned = counts.get(ProfileStatus.BANNED.value, 0)
+        incomplete = counts.get(ProfileStatus.INCOMPLETE.value, 0)
+        return {
+            "active": active,
+            "hidden": hidden,
+            "banned": banned,
+            "incomplete": incomplete,
+            "registered": active + hidden + banned,
+            "total": sum(counts.values()),
+        }
+
+
+async def get_pending_reports_count() -> int:
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(Report)
+            .where(Report.status == ReportStatus.PENDING)
+        )
+        return (await session.execute(stmt)).scalar_one()
+
+
+async def get_pending_report_ids() -> list[int]:
+    async with session_maker() as session:
+        stmt = (
+            select(Report.id)
+            .where(Report.status == ReportStatus.PENDING)
+            .order_by(Report.created_at.asc())
+        )
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_report_by_id(report_id: int) -> Report | None:
+    async with session_maker() as session:
+        return await session.get(Report, report_id)
+
+
+async def get_users_by_ids(user_ids: list[int]) -> dict[int, User]:
+    if not user_ids:
+        return {}
+    async with session_maker() as session:
+        stmt = select(User).where(User.telegram_id.in_(user_ids))
+        users = (await session.execute(stmt)).scalars().all()
+        return {user.telegram_id: user for user in users}
+
+
+async def reject_report(report_id: int) -> bool:
+    async with session_maker() as session:
+        report = await session.get(Report, report_id)
+        if not report or report.status != ReportStatus.PENDING:
+            return False
+        report.status = ReportStatus.REJECTED
+        await session.commit()
+        return True
