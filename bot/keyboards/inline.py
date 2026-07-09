@@ -50,9 +50,19 @@ class ReportReasonCallback(CallbackData, prefix="rep_r"):
     reason: str
     index: int = 0
 
+class ReportSkipCommentCallback(CallbackData, prefix="rep_skip"):
+    pass
+
 
 class AdminMenuCallback(CallbackData, prefix="adm"):
-    action: str  # "menu", "reports", "stats"
+    action: str  # "menu", "reports", "stats", "bans"
+
+class AdminBanNavCallback(CallbackData, prefix="adm_bn"):
+    index: int
+
+class AdminUnbanCallback(CallbackData, prefix="adm_ub"):
+    telegram_id: int
+    index: int = 0
 
 class AdminReportNavCallback(CallbackData, prefix="adm_rn"):
     index: int
@@ -156,10 +166,17 @@ def get_edit_settings_fields_keyboard() -> InlineKeyboardMarkup:
 
 # ================= 4. КЛАВИАТУРЫ СВАЙПОВ И ЛАЙКОВ =================
 
+REPORT_REASON_OPTIONS = {
+    "ads": "📢 Реклама и сторонние ресурсы",
+    "offensive": "💬 Оскорбления и травля",
+    "nsfw": "🔞 NSFW-контент",
+    "political": "⚠️ Политика и разжигание ненависти",
+}
+
 REPORT_REASON_LABELS = {
+    **REPORT_REASON_OPTIONS,
     "inappropriate_photo": "📷 Неприемлемое фото",
     "spam": "📢 Спам / реклама",
-    "offensive": "💬 Оскорбления в анкете",
     "fake": "🎭 Фейковая анкета",
     "other": "❓ Другое",
 }
@@ -243,7 +260,7 @@ def get_match_keyboard(index: int, total: int) -> InlineKeyboardMarkup:
 
 def get_report_reasons_keyboard(to_user_id: int, context: str, index: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for reason_key, label in REPORT_REASON_LABELS.items():
+    for reason_key, label in REPORT_REASON_OPTIONS.items():
         builder.button(
             text=label,
             callback_data=ReportReasonCallback(
@@ -258,13 +275,25 @@ def get_report_reasons_keyboard(to_user_id: int, context: str, index: int = 0) -
     return builder.as_markup()
 
 
+def get_report_comment_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⏭ Пропустить", callback_data=ReportSkipCommentCallback().pack())
+    builder.button(text="❌ Отмена", callback_data="report_cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 # ================= 5. АДМИН-ПАНЕЛЬ =================
 
-def get_admin_menu_keyboard(pending_reports: int) -> InlineKeyboardMarkup:
+def get_admin_menu_keyboard(pending_reports: int, banned_count: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text=f"🚨 Жалобы ({pending_reports})",
         callback_data=AdminMenuCallback(action="reports").pack(),
+    )
+    builder.button(
+        text=f"🚫 Забаненные ({banned_count})",
+        callback_data=AdminMenuCallback(action="bans").pack(),
     )
     builder.button(
         text="📊 Статистика",
@@ -326,4 +355,38 @@ def get_admin_back_keyboard() -> InlineKeyboardMarkup:
         text="⬅️ В админ-панель",
         callback_data=AdminMenuCallback(action="menu").pack(),
     )
+    return builder.as_markup()
+
+
+def get_admin_bans_keyboard(telegram_id: int, index: int, total: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    nav_count = 0
+    if total > 1:
+        if index > 0:
+            builder.button(
+                text="⬅️",
+                callback_data=AdminBanNavCallback(index=index - 1).pack(),
+            )
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="admin_bans_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(
+                text="➡️",
+                callback_data=AdminBanNavCallback(index=index + 1).pack(),
+            )
+            nav_count += 1
+
+    builder.button(
+        text="✅ Разбанить",
+        callback_data=AdminUnbanCallback(telegram_id=telegram_id, index=index).pack(),
+    )
+    builder.button(
+        text="⬅️ В админ-панель",
+        callback_data=AdminMenuCallback(action="menu").pack(),
+    )
+    if total > 1:
+        builder.adjust(nav_count, 1, 1)
+    else:
+        builder.adjust(1, 1)
     return builder.as_markup()

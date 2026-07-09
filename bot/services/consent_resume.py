@@ -9,6 +9,7 @@ _MENU_HANDLERS: dict[str, tuple[str, str]] = {
     "👤 Моя анкета": ("bot.handlers.profile", "show_my_profile"),
     "❤️ Мои лайки": ("bot.handlers.likes", "start_viewing_likes"),
     "💚 Мои мэтчи": ("bot.handlers.matches", "start_viewing_matches"),
+    "📜 Правила": ("bot.handlers.start", "show_rules"),
 }
 
 

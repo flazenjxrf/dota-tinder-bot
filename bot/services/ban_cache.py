@@ -14,3 +14,7 @@ def add(telegram_id: int) -> None:
 
 def has(telegram_id: int) -> bool:
     return telegram_id in _banned_ids
+
+
+def remove(telegram_id: int) -> None:
+    _banned_ids.discard(telegram_id)

@@ -35,3 +35,7 @@ class EditSettings(StatesGroup):
 
 class SwipingForm(StatesGroup):
     like_message = State()
+
+
+class ReportForm(StatesGroup):
+    comment = State()

@@ -25,6 +25,19 @@ AFTER_CONSENT_TEXT = (
     "Отлично! Теперь заполни анкету — так другие игроки смогут тебя найти 🎮"
 )
 
+RULES_TEXT = (
+    "📌 <b>Правила бота</b>\n\n"
+    "1. Запрещена реклама сторонних каналов, турниров, сервисов и любых внешних ресурсов\n\n"
+    "2. Запрещены оскорбления, агрессия и травля\n\n"
+    "3. Запрещен NSFW-контент\n\n"
+    "4. Запрещены политические высказывания, провокации и разжигание ненависти\n\n"
+    "5. За нарушение правил — бан без предупреждения\n\n"
+    "6. Администратор оставляет за собой право блокировать пользователей, "
+    "чьи действия противоречат духу проекта\n\n"
+    "7. Все вопросы и апелляции — в личные сообщения тгк @flazenjxrf\n\n"
+    "Спасибо, что делаешь комьюнити чище ❤️"
+)
+
 
 async def send_registration_prompt(message: Message):
     await message.answer(AFTER_CONSENT_TEXT, reply_markup=get_start_keyboard())
@@ -80,3 +93,9 @@ async def cmd_menu(message: Message):
         await message.answer("Сначала заполни анкету через /start")
         return
     await refresh_main_menu(message, "Главное меню 👇")
+
+
+@router.message(F.text == "📜 Правила")
+async def show_rules(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(RULES_TEXT, reply_markup=get_main_menu_keyboard())

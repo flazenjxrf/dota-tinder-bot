@@ -20,11 +20,10 @@ class ActionType(enum.Enum):
 
 
 class ReportReason(enum.Enum):
-    INAPPROPRIATE_PHOTO = "inappropriate_photo"
-    SPAM = "spam"
+    ADS = "ads"
     OFFENSIVE = "offensive"
-    FAKE = "fake"
-    OTHER = "other"
+    NSFW = "nsfw"
+    POLITICAL = "political"
 
 
 class ReportStatus(enum.Enum):
@@ -92,7 +91,10 @@ class Report(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     from_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
-    reason: Mapped[ReportReason] = mapped_column(Enum(ReportReason))
+    reason: Mapped[ReportReason] = mapped_column(
+        Enum(ReportReason, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+    )
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ReportStatus] = mapped_column(
         Enum(ReportStatus, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
         default=ReportStatus.PENDING,

@@ -429,7 +429,12 @@ async def get_pending_like_at_index(
         return user, total, message
 
 
-async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -> int | None:
+async def add_report(
+    from_user_id: int,
+    to_user_id: int,
+    reason: ReportReason,
+    comment: str | None = None,
+) -> int | None:
     """Сохраняет жалобу. Возвращает ID новой жалобы или None, если уже была."""
     async with session_maker() as session:
         stmt = select(Report).where(
@@ -443,6 +448,7 @@ async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -
             from_user_id=from_user_id,
             to_user_id=to_user_id,
             reason=reason,
+            comment=comment,
             status=ReportStatus.PENDING,
         )
         session.add(report)
@@ -555,6 +561,52 @@ async def ban_user(telegram_id: int, banned_by: int, reason: str | None = None) 
         await session.commit()
         ban_cache.add(telegram_id)
         logging.info("Пользователь %s заблокирован админом %s.", telegram_id, banned_by)
+        return True
+
+
+async def get_banned_users_count() -> int:
+    async with session_maker() as session:
+        stmt = select(func.count()).select_from(BannedUser)
+        return (await session.execute(stmt)).scalar_one()
+
+
+async def get_banned_user_at_index(index: int) -> tuple[BannedUser | None, User | None, int]:
+    async with session_maker() as session:
+        total = (await session.execute(select(func.count()).select_from(BannedUser))).scalar_one()
+        if total == 0:
+            return None, None, 0
+
+        index = min(max(index, 0), total - 1)
+        stmt = (
+            select(BannedUser)
+            .order_by(BannedUser.banned_at.desc())
+            .offset(index)
+            .limit(1)
+        )
+        banned = (await session.execute(stmt)).scalar_one_or_none()
+        if not banned:
+            return None, None, total
+
+        user = await session.get(User, banned.telegram_id)
+        return banned, user, total
+
+
+async def unban_user(telegram_id: int) -> bool:
+    from bot.services import ban_cache
+    async with session_maker() as session:
+        banned = await session.get(BannedUser, telegram_id)
+        if not banned:
+            return False
+
+        await session.delete(banned)
+
+        user = await session.get(User, telegram_id)
+        if user and user.status == ProfileStatus.BANNED:
+            user.status = ProfileStatus.ACTIVE
+
+        await session.commit()
+        ban_cache.remove(telegram_id)
+        logging.info("Пользователь %s разблокирован.", telegram_id)
         return True
 
 

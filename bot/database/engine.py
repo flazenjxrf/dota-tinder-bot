@@ -72,6 +72,15 @@ async def init_models():
         await conn.execute(text(
             "UPDATE reports SET status = 'pending' WHERE status IS NULL"
         ))
+        await conn.execute(text(
+            "ALTER TABLE reports ADD COLUMN IF NOT EXISTS comment TEXT"
+        ))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE reports ALTER COLUMN reason TYPE VARCHAR(50) USING reason::text;
+            EXCEPTION WHEN others THEN NULL;
+            END $$;
+        """))
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()

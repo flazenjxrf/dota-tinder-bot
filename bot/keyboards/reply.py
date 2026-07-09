@@ -8,7 +8,10 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="👤 Моя анкета"),
                 KeyboardButton(text="❤️ Мои лайки"),
             ],
-            [KeyboardButton(text="💚 Мои мэтчи")],
+            [
+                KeyboardButton(text="💚 Мои мэтчи"),
+                KeyboardButton(text="📜 Правила"),
+            ],
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
