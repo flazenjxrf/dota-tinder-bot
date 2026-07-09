@@ -6,9 +6,10 @@ from aiogram.fsm.context import FSMContext
 from bot.database.requests import get_user_with_settings, has_user_consented, record_user_consent
 from bot.database.models import ProfileStatus
 from bot.keyboards.inline import get_consent_keyboard, get_start_keyboard
-from bot.keyboards.reply import get_main_menu_keyboard, refresh_main_menu
+from bot.keyboards.reply import hide_reply_keyboard, REMOVE_KEYBOARD
 from bot.middleware.consent import CONSENT_GATE_SHOWN, EXISTING_USER_CONSENT_TEXT
 from bot.services.consent_resume import resume_pending_menu_action
+from bot.utils.bot_commands import CMD_RULES, MENU_HINT
 
 router = Router()
 
@@ -52,8 +53,8 @@ async def cmd_start(message: Message):
             await message.answer(EXISTING_USER_CONSENT_TEXT, reply_markup=get_consent_keyboard())
             return
         await message.answer(
-            "Привет! С возвращением в Dota Tinder!",
-            reply_markup=get_main_menu_keyboard(),
+            "Привет! С возвращением в Dota Tinder!\n\n" + MENU_HINT,
+            reply_markup=REMOVE_KEYBOARD,
         )
         return
 
@@ -76,7 +77,7 @@ async def accept_consent(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("✅ Спасибо! Можешь продолжать пользоваться ботом.")
         await callback.answer()
         await resume_pending_menu_action(callback, state)
-        await refresh_main_menu(callback.message)
+        await hide_reply_keyboard(callback.message)
         return
 
     await callback.message.edit_text(AFTER_CONSENT_TEXT, reply_markup=get_start_keyboard())
@@ -92,10 +93,10 @@ async def cmd_menu(message: Message):
             return
         await message.answer("Сначала заполни анкету через /start")
         return
-    await refresh_main_menu(message, "Главное меню 👇")
+    await hide_reply_keyboard(message)
 
 
-@router.message(F.text == "📜 Правила")
+@router.message(Command(CMD_RULES))
 async def show_rules(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(RULES_TEXT, reply_markup=get_main_menu_keyboard())
+    await message.answer(RULES_TEXT)

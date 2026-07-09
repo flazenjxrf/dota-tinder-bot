@@ -4,33 +4,22 @@ from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import get_user_with_settings
 from bot.database.models import ProfileStatus
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.utils.bot_commands import MENU_HINT
 
 router = Router()
-
-KNOWN_MENU_BUTTONS = {
-    "🔍 Смотреть анкеты",
-    "👤 Моя анкета",
-    "❤️ Мои лайки",
-    "💚 Мои мэтчи",
-    "📜 Правила",
-}
 
 
 @router.message(F.text)
 async def restore_menu_on_unknown_text(message: Message, state: FSMContext):
-    """Возвращает меню, если пользователь написал текст вне сценария."""
+    """Подсказывает про меню команд, если пользователь написал текст вне сценария."""
     if await state.get_state():
+        return
+
+    if message.text and message.text.startswith("/"):
         return
 
     user = await get_user_with_settings(message.from_user.id)
     if not user or user.status == ProfileStatus.INCOMPLETE:
         return
 
-    if message.text in KNOWN_MENU_BUTTONS:
-        return
-
-    await message.answer(
-        "Используй кнопки меню внизу 👇",
-        reply_markup=get_main_menu_keyboard(),
-    )
+    await message.answer(MENU_HINT)

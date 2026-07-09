@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from html import escape
@@ -6,7 +7,8 @@ from html import escape
 from bot.database.requests import get_pending_like_at_index, add_swipe, get_user_with_settings
 from bot.database.models import ActionType
 from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback, LikeNavCallback
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.keyboards.reply import REMOVE_KEYBOARD
+from bot.utils.bot_commands import CMD_LIKES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
@@ -28,13 +30,13 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
     if not next_user:
         text = (
             "🎯 <b>Все входящие лайки просмотрены!</b>\n\n"
-            "Пока новых лайков нет. Но ты можешь поискать напарников во вкладке 🔍 Смотреть анкеты."
+            "Пока новых лайков нет. Поищи напарников через /browse."
         )
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
-            await message_or_callback.message.answer(text, reply_markup=get_main_menu_keyboard())
+            await message_or_callback.message.answer(text, reply_markup=REMOVE_KEYBOARD)
         else:
-            await message_or_callback.answer(text, reply_markup=get_main_menu_keyboard())
+            await message_or_callback.answer(text, reply_markup=REMOVE_KEYBOARD)
         return
 
     actual_index = min(max(index, 0), total - 1)
@@ -59,7 +61,7 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
 
 
 # ================= КНОПКА "МОИ ЛАЙКИ" В ГЛАВНОМ МЕНЮ =================
-@router.message(F.text == "❤️ Мои лайки")
+@router.message(Command(CMD_LIKES))
 async def start_viewing_likes(message: Message, state: FSMContext):
     await state.clear()
     await show_pending_like_at_index(message, message.from_user.id, index=0)

@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from html import escape
@@ -22,7 +23,8 @@ from bot.keyboards.inline import (
     LikeMessageCancelCallback,
     get_like_message_cancel_keyboard,
 )
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.keyboards.reply import REMOVE_KEYBOARD
+from bot.utils.bot_commands import CMD_BROWSE
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
@@ -178,9 +180,9 @@ async def show_next_profile(message_or_callback, user_id: int, state: FSMContext
         text = "🎯 <b>Подходящие анкеты закончились!</b>\n\nПопробуй расширить фильтры поиска в меню 👤 Моя анкета -> Фильтры поиска."
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
-            await message_or_callback.message.answer(text, reply_markup=get_main_menu_keyboard())
+            await message_or_callback.message.answer(text, reply_markup=REMOVE_KEYBOARD)
         else:
-            await message_or_callback.answer(text, reply_markup=get_main_menu_keyboard())
+            await message_or_callback.answer(text, reply_markup=REMOVE_KEYBOARD)
         return
 
     can_undo = False
@@ -193,7 +195,7 @@ async def show_next_profile(message_or_callback, user_id: int, state: FSMContext
 
 
 # ================= КНОПКА "СМОТРЕТЬ АНКЕТЫ" В ГЛАВНОМ МЕНЮ =================
-@router.message(F.text == "🔍 Смотреть анкеты")
+@router.message(Command(CMD_BROWSE))
 async def start_swiping(message: Message, state: FSMContext):
     await state.clear()
 
@@ -204,7 +206,7 @@ async def start_swiping(message: Message, state: FSMContext):
         return
 
     if user.status == ProfileStatus.HIDDEN:
-        await message.answer(HIDDEN_PROFILE_MSG, reply_markup=get_main_menu_keyboard())
+        await message.answer(HIDDEN_PROFILE_MSG, reply_markup=REMOVE_KEYBOARD)
         return
 
     await show_next_profile(message, message.from_user.id, state=state)
@@ -360,7 +362,7 @@ async def finish_like_with_message(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(
             f"Лимит лайков с сообщением на сегодня исчерпан ({DAILY_LIKE_MESSAGE_LIMIT} в сутки).",
-            reply_markup=get_main_menu_keyboard(),
+            reply_markup=REMOVE_KEYBOARD,
         )
         return
 
@@ -381,7 +383,7 @@ async def finish_like_with_message(message: Message, state: FSMContext):
     new_remaining = await get_like_messages_remaining_today(from_user_id)
     await message.answer(
         f"💌 Лайк с сообщением отправлен! Осталось сегодня: {new_remaining}",
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=REMOVE_KEYBOARD,
     )
     await show_next_profile(message, from_user_id, state=state)
 

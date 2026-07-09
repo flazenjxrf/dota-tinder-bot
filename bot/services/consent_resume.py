@@ -3,13 +3,14 @@ from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from bot.middleware.consent import CONSENT_PENDING_MESSAGE
+from bot.utils.bot_commands import normalize_command
 
 _MENU_HANDLERS: dict[str, tuple[str, str]] = {
-    "🔍 Смотреть анкеты": ("bot.handlers.swiping", "start_swiping"),
-    "👤 Моя анкета": ("bot.handlers.profile", "show_my_profile"),
-    "❤️ Мои лайки": ("bot.handlers.likes", "start_viewing_likes"),
-    "💚 Мои мэтчи": ("bot.handlers.matches", "start_viewing_matches"),
-    "📜 Правила": ("bot.handlers.start", "show_rules"),
+    "/browse": ("bot.handlers.swiping", "start_swiping"),
+    "/profile": ("bot.handlers.profile", "show_my_profile"),
+    "/likes": ("bot.handlers.likes", "start_viewing_likes"),
+    "/matches": ("bot.handlers.matches", "start_viewing_matches"),
+    "/rules": ("bot.handlers.start", "show_rules"),
 }
 
 
@@ -39,10 +40,11 @@ async def resume_pending_menu_action(callback: CallbackQuery, state: FSMContext)
     if pending:
         await state.set_data(data)
 
-    if not pending or pending not in _MENU_HANDLERS:
+    command = normalize_command(pending)
+    if not command or command not in _MENU_HANDLERS:
         return
 
-    module_name, func_name = _MENU_HANDLERS[pending]
+    module_name, func_name = _MENU_HANDLERS[command]
     module = importlib.import_module(module_name)
     handler = getattr(module, func_name)
     proxy = _MessageProxy(callback, pending)

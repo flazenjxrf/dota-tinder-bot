@@ -9,6 +9,7 @@ from bot.database.requests import get_all_consented_ids, get_all_banned_ids
 from bot.middleware.consent import ConsentMiddleware
 from bot.middleware.ban import BanMiddleware
 from bot.services import consent_cache, ban_cache
+from bot.utils.bot_commands import setup_bot_commands
 
 # Импортируем все наши обработчики (хэндлеры)
 from bot.handlers import start, register, settings, profile, swiping, likes, report, matches, admin, fallback
@@ -85,6 +86,8 @@ async def main():
     # 5. Запуск опроса серверов Telegram (polling)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        await setup_bot_commands(bot)
+        logger.info("Меню команд Telegram настроено")
         logger.info("Бот начал принимать сообщения (Polling запущен) 🚀")
         await dp.start_polling(bot)
     finally:

@@ -5,6 +5,8 @@ from aiogram.fsm.context import FSMContext
 from bot.states.fsm import SearchSettingsForm
 from bot.keyboards.inline import get_search_positions_keyboard, SearchPositionCallback, get_skip_keyboard
 from bot.database.requests import save_user_and_settings
+from bot.keyboards.reply import REMOVE_KEYBOARD
+from bot.utils.bot_commands import MENU_HINT
 
 router = Router()
 
@@ -118,9 +120,6 @@ async def process_max_mmr_skip(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-from bot.keyboards.reply import get_main_menu_keyboard  # <-- Импортируй вверху файла
-
-
 async def finish_registration(user, message_obj: Message, state: FSMContext):
     data = await state.get_data()
 
@@ -132,9 +131,8 @@ async def finish_registration(user, message_obj: Message, state: FSMContext):
 
     await state.clear()
 
-    # Теперь присылаем постоянную клавиатуру главного меню
     await message_obj.answer(
         "✅ Все настройки успешно сохранены!\n\n"
-        "Теперь ты можешь искать тимейтов. Выбери действие в меню внизу 👇",
-        reply_markup=get_main_menu_keyboard()  # <-- Добавили меню
+        f"Теперь ты можешь искать тимейтов. {MENU_HINT}",
+        reply_markup=REMOVE_KEYBOARD,
     )

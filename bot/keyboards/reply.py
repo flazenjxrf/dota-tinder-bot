@@ -1,27 +1,10 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, Message
+from aiogram.types import ReplyKeyboardRemove, Message
 
-def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🔍 Смотреть анкеты")],
-            [
-                KeyboardButton(text="👤 Моя анкета"),
-                KeyboardButton(text="❤️ Мои лайки"),
-            ],
-            [
-                KeyboardButton(text="💚 Мои мэтчи"),
-                KeyboardButton(text="📜 Правила"),
-            ],
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        is_persistent=True,
-    )
+REMOVE_KEYBOARD = ReplyKeyboardRemove()
 
 
-async def refresh_main_menu(message: Message, title: str | None = None):
-    """Отправляет актуальную reply-клавиатуру (Telegram сам её не обновляет)."""
-    await message.answer(
-        title or "Меню обновлено 👇",
-        reply_markup=get_main_menu_keyboard(),
-    )
+async def hide_reply_keyboard(message: Message, text: str | None = None) -> None:
+    """Убирает старую reply-клавиатуру и подсказывает про меню команд."""
+    from bot.utils.bot_commands import MENU_HINT
+
+    await message.answer(text or MENU_HINT, reply_markup=REMOVE_KEYBOARD)

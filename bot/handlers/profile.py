@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -23,7 +24,7 @@ from bot.keyboards.inline import (
     get_consent_keyboard,
 )
 from bot.handlers.start import CONSENT_TEXT
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.utils.bot_commands import CMD_PROFILE
 from bot.utils.city import format_city_display
 
 router = Router()
@@ -93,7 +94,7 @@ async def send_my_settings_message(message: Message, telegram_id: int):
 
 # ================= ОТОБРАЖЕНИЕ ПРОФИЛЯ =================
 
-@router.message(F.text == "👤 Моя анкета")
+@router.message(Command(CMD_PROFILE))
 async def show_my_profile(message: Message, state: FSMContext):
     await state.clear()
     await send_my_profile_message(message, message.from_user.id)
@@ -244,7 +245,7 @@ async def edit_name_start(callback: CallbackQuery, state: FSMContext):
 async def edit_name_finish(message: Message, state: FSMContext):
     await update_user_field(message.from_user.id, "name", message.text)
     await state.clear()
-    await message.answer("✅ Имя успешно обновлено!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Имя успешно обновлено!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -263,7 +264,7 @@ async def edit_age_finish(message: Message, state: FSMContext):
         return
     await update_user_field(message.from_user.id, "age", int(message.text))
     await state.clear()
-    await message.answer("✅ Возраст успешно обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Возраст успешно обновлен!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -282,7 +283,7 @@ async def edit_city_finish(message: Message, state: FSMContext):
         return
     await update_user_field(message.from_user.id, "city", message.text.strip())
     await state.clear()
-    await message.answer("✅ Город успешно обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Город успешно обновлен!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -301,7 +302,7 @@ async def edit_mmr_finish(message: Message, state: FSMContext):
         return
     await update_user_field(message.from_user.id, "mmr", int(message.text))
     await state.clear()
-    await message.answer("✅ MMR успешно обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ MMR успешно обновлен!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -317,7 +318,7 @@ async def edit_bio_start(callback: CallbackQuery, state: FSMContext):
 async def edit_bio_finish(message: Message, state: FSMContext):
     await update_user_field(message.from_user.id, "bio", message.text)
     await state.clear()
-    await message.answer("✅ Текст 'О себе' изменен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Текст 'О себе' изменен!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -334,7 +335,7 @@ async def edit_photo_finish(message: Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
     await update_user_field(message.from_user.id, "photo_file_id", photo_file_id)
     await state.clear()
-    await message.answer("✅ Фото успешно изменено!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Фото успешно изменено!")
     await send_my_profile_message(message, message.from_user.id)
 
 
@@ -416,7 +417,7 @@ async def edit_filter_min_age_finish(message: Message, state: FSMContext):
         return
     await update_settings_field(message.from_user.id, "min_age", int(message.text))
     await state.clear()
-    await message.answer("✅ Минимальный возраст поиска обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Минимальный возраст поиска обновлен!")
     await send_my_settings_message(message, message.from_user.id)
 
 
@@ -425,7 +426,7 @@ async def reset_filter_min_age(callback: CallbackQuery, state: FSMContext):
     await update_settings_field(callback.from_user.id, "min_age", None)
     await state.clear()
     await callback.message.delete()  # Удаляем системное сообщение с кнопкой сброса
-    await callback.message.answer("✅ Фильтр минимального возраста сброшен!", reply_markup=get_main_menu_keyboard())
+    await callback.message.answer("✅ Фильтр минимального возраста сброшен!")
     await send_my_settings_message(callback.message, callback.from_user.id)
     await callback.answer()
 
@@ -448,7 +449,7 @@ async def edit_filter_max_age_finish(message: Message, state: FSMContext):
         return
     await update_settings_field(message.from_user.id, "max_age", int(message.text))
     await state.clear()
-    await message.answer("✅ Максимальный возраст поиска обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Максимальный возраст поиска обновлен!")
     await send_my_settings_message(message, message.from_user.id)
 
 
@@ -457,7 +458,7 @@ async def reset_filter_max_age(callback: CallbackQuery, state: FSMContext):
     await update_settings_field(callback.from_user.id, "max_age", None)
     await state.clear()
     await callback.message.delete()
-    await callback.message.answer("✅ Фильтр максимального возраста сброшен!", reply_markup=get_main_menu_keyboard())
+    await callback.message.answer("✅ Фильтр максимального возраста сброшен!")
     await send_my_settings_message(callback.message, callback.from_user.id)
     await callback.answer()
 
@@ -480,7 +481,7 @@ async def edit_filter_min_mmr_finish(message: Message, state: FSMContext):
         return
     await update_settings_field(message.from_user.id, "min_mmr", int(message.text))
     await state.clear()
-    await message.answer("✅ Минимальный MMR поиска обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Минимальный MMR поиска обновлен!")
     await send_my_settings_message(message, message.from_user.id)
 
 
@@ -489,7 +490,7 @@ async def reset_filter_min_mmr(callback: CallbackQuery, state: FSMContext):
     await update_settings_field(callback.from_user.id, "min_mmr", None)
     await state.clear()
     await callback.message.delete()
-    await callback.message.answer("✅ Фильтр минимального рейтинга сброшен!", reply_markup=get_main_menu_keyboard())
+    await callback.message.answer("✅ Фильтр минимального рейтинга сброшен!")
     await send_my_settings_message(callback.message, callback.from_user.id)
     await callback.answer()
 
@@ -512,7 +513,7 @@ async def edit_filter_max_mmr_finish(message: Message, state: FSMContext):
         return
     await update_settings_field(message.from_user.id, "max_mmr", int(message.text))
     await state.clear()
-    await message.answer("✅ Максимальный MMR поиска обновлен!", reply_markup=get_main_menu_keyboard())
+    await message.answer("✅ Максимальный MMR поиска обновлен!")
     await send_my_settings_message(message, message.from_user.id)
 
 
@@ -521,7 +522,7 @@ async def reset_filter_max_mmr(callback: CallbackQuery, state: FSMContext):
     await update_settings_field(callback.from_user.id, "max_mmr", None)
     await state.clear()
     await callback.message.delete()
-    await callback.message.answer("✅ Фильтр максимального рейтинга сброшен!", reply_markup=get_main_menu_keyboard())
+    await callback.message.answer("✅ Фильтр максимального рейтинга сброшен!")
     await send_my_settings_message(callback.message, callback.from_user.id)
     await callback.answer()
 

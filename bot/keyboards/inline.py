@@ -188,19 +188,32 @@ def get_swipe_keyboard(
     like_messages_remaining: int = 5,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if can_undo:
-        builder.button(text="⬅️ Вернуть предыдущую", callback_data=UndoSwipeCallback().pack())
-    builder.button(text="👎 Дизлайк", callback_data=SwipeCallback(action="dislike", to_user_id=to_user_id).pack())
-    builder.button(text="❤️ Лайк", callback_data=SwipeCallback(action="like", to_user_id=to_user_id).pack())
-    builder.button(
-        text=f"💌 Лайк с сообщением (осталось: {like_messages_remaining})",
-        callback_data=LikeWithMessageCallback(to_user_id=to_user_id).pack(),
+    builder.row(
+        InlineKeyboardButton(
+            text="👎",
+            callback_data=SwipeCallback(action="dislike", to_user_id=to_user_id).pack(),
+        ),
+        InlineKeyboardButton(
+            text="❤️",
+            callback_data=SwipeCallback(action="like", to_user_id=to_user_id).pack(),
+        ),
+        InlineKeyboardButton(
+            text="💌",
+            callback_data=LikeWithMessageCallback(to_user_id=to_user_id).pack(),
+        ),
     )
-    builder.button(text="🚨 Жалоба", callback_data=ReportCallback(to_user_id=to_user_id, context="swipe").pack())
+    bottom_row = []
     if can_undo:
-        builder.adjust(1, 2, 1, 1)
-    else:
-        builder.adjust(2, 1, 1)
+        bottom_row.append(
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=UndoSwipeCallback().pack())
+        )
+    bottom_row.append(
+        InlineKeyboardButton(
+            text="🚨",
+            callback_data=ReportCallback(to_user_id=to_user_id, context="swipe").pack(),
+        )
+    )
+    builder.row(*bottom_row)
     return builder.as_markup()
 
 def get_like_message_cancel_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
@@ -213,32 +226,36 @@ def get_like_message_cancel_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
 
 def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    nav_count = 0
     if total > 1:
+        nav_buttons = []
         if index > 0:
-            builder.button(text="⬅️", callback_data=LikeNavCallback(index=index - 1).pack())
-            nav_count += 1
-        builder.button(text=f"{index + 1}/{total}", callback_data="likes_counter")
-        nav_count += 1
+            nav_buttons.append(
+                InlineKeyboardButton(text="⬅️", callback_data=LikeNavCallback(index=index - 1).pack())
+            )
+        nav_buttons.append(
+            InlineKeyboardButton(text=f"{index + 1}/{total}", callback_data="likes_counter")
+        )
         if index < total - 1:
-            builder.button(text="➡️", callback_data=LikeNavCallback(index=index + 1).pack())
-            nav_count += 1
-    builder.button(
-        text="👎 Дизлайк",
-        callback_data=LikeBackCallback(action="dislike", from_user_id=from_user_id, index=index).pack(),
+            nav_buttons.append(
+                InlineKeyboardButton(text="➡️", callback_data=LikeNavCallback(index=index + 1).pack())
+            )
+        builder.row(*nav_buttons)
+    builder.row(
+        InlineKeyboardButton(
+            text="👎",
+            callback_data=LikeBackCallback(action="dislike", from_user_id=from_user_id, index=index).pack(),
+        ),
+        InlineKeyboardButton(
+            text="❤️",
+            callback_data=LikeBackCallback(action="like", from_user_id=from_user_id, index=index).pack(),
+        ),
     )
-    builder.button(
-        text="❤️ Лайк в ответ",
-        callback_data=LikeBackCallback(action="like", from_user_id=from_user_id, index=index).pack(),
+    builder.row(
+        InlineKeyboardButton(
+            text="🚨 Жалоба",
+            callback_data=ReportCallback(to_user_id=from_user_id, context="likes", index=index).pack(),
+        ),
     )
-    builder.button(
-        text="🚨 Жалоба",
-        callback_data=ReportCallback(to_user_id=from_user_id, context="likes", index=index).pack(),
-    )
-    if total > 1:
-        builder.adjust(nav_count, 2, 1)
-    else:
-        builder.adjust(2, 1)
     return builder.as_markup()
 
 
