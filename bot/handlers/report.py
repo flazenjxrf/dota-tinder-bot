@@ -1,5 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import add_report, add_swipe, get_user_with_settings
 from bot.database.models import ActionType, ProfileStatus, ReportReason
@@ -47,7 +48,7 @@ async def cancel_report(callback: CallbackQuery):
 
 
 @router.callback_query(ReportReasonCallback.filter())
-async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCallback):
+async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCallback, state: FSMContext):
     from_user_id = callback.from_user.id
     to_user_id = callback_data.to_user_id
 
@@ -82,7 +83,8 @@ async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCall
 
     if callback_data.context == "swipe":
         from bot.handlers.swiping import show_next_profile
-        await show_next_profile(callback, from_user_id)
+        await state.update_data(undo_profile_id=None)
+        await show_next_profile(callback, from_user_id, state=state)
     else:
         from bot.handlers.likes import show_pending_like_at_index
         await show_pending_like_at_index(callback, from_user_id, callback_data.index)

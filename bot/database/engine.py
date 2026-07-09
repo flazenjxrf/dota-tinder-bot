@@ -16,6 +16,9 @@ async def init_models():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS normalized_city VARCHAR(50)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS message TEXT"
+        ))
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()

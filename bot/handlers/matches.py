@@ -2,10 +2,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from bot.database.requests import get_match_at_index
+from bot.database.requests import get_match_at_index, get_user_with_settings
 from bot.keyboards.inline import get_match_keyboard, MatchNavCallback
 from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.profile_display import send_profile_card
+from bot.utils.geolocation import format_location_line
 from bot.utils.match import get_user_link
 
 router = Router()
@@ -35,12 +36,13 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
         return
 
     actual_index = min(max(index, 0), total - 1)
+    viewer = await get_user_with_settings(user_id)
     pos_names = [POSITIONS_MAPPING[p] for p in sorted(partner.positions)]
     pos_str = ", ".join(pos_names)
     contact = get_user_link(partner.telegram_id, partner.name, partner.username)
     caption = (
         f"💚 <b>Мэтч</b> ({actual_index + 1}/{total}):\n\n"
-        f"🌟 <b>{partner.name}</b>, {partner.age} | 📍 {partner.city}\n"
+        f"🌟 <b>{partner.name}</b>, {partner.age} | {format_location_line(viewer, partner)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {partner.mmr}\n\n"
         f"💬 О себе:\n{partner.bio}\n\n"

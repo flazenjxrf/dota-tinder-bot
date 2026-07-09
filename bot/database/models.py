@@ -72,6 +72,7 @@ class Swipe(Base):
     from_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     action: Mapped[ActionType] = mapped_column(Enum(ActionType))
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_mutual: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
@@ -87,3 +88,11 @@ class Report(Base):
     to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     reason: Mapped[ReportReason] = mapped_column(Enum(ReportReason))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class UserConsent(Base):
+    __tablename__ = "user_consents"
+
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
+    consented_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

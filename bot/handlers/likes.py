@@ -1,12 +1,14 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from html import escape
 
 from bot.database.requests import get_pending_like_at_index, add_swipe, get_user_with_settings
 from bot.database.models import ActionType
 from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback, LikeNavCallback
 from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.profile_display import send_profile_card
+from bot.utils.geolocation import format_location_line
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 
 router = Router()
@@ -21,7 +23,7 @@ positions_mapping = {
 
 async def show_pending_like_at_index(message_or_callback, user_id: int, index: int = 0):
     """Показывает входящий лайк по индексу в списке."""
-    next_user, total = await get_pending_like_at_index(user_id, index)
+    next_user, total, like_message = await get_pending_like_at_index(user_id, index)
 
     if not next_user:
         text = (
@@ -36,15 +38,18 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
         return
 
     actual_index = min(max(index, 0), total - 1)
+    viewer = await get_user_with_settings(user_id)
     pos_names = [positions_mapping[p] for p in sorted(next_user.positions)]
     pos_str = ", ".join(pos_names)
     caption = (
         f"🔥 <b>Ты понравился этому игроку</b> ({actual_index + 1}/{total}):\n\n"
-        f"🌟 <b>{next_user.name}</b>, {next_user.age} | 📍 {next_user.city}\n"
+        f"🌟 <b>{next_user.name}</b>, {next_user.age} | {format_location_line(viewer, next_user)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {next_user.mmr}\n\n"
         f"💬 О себе:\n{next_user.bio}"
     )
+    if like_message:
+        caption += f"\n\n💌 <b>Сообщение к лайку:</b>\n<i>«{escape(like_message)}»</i>"
 
     await send_profile_card(
         message_or_callback,
@@ -94,6 +99,7 @@ async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallb
             f"Ты ответил взаимностью игроку {other_link}!",
             other,
             other_link,
+            viewer=me,
         )
 
         try:
@@ -103,6 +109,7 @@ async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallb
                 f"Игрок {my_link} ответил тебе взаимностью в «Моих лайках»!",
                 me,
                 my_link,
+                viewer=other,
             )
         except Exception:
             pass

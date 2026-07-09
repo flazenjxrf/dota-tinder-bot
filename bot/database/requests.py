@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy import select, or_
 from bot.database.engine import session_maker
-from bot.database.models import User, SearchSettings, ProfileStatus
+from bot.database.models import User, SearchSettings, ProfileStatus, UserConsent
 from bot.utils.city import normalize_city, get_normalized_city
 
 
@@ -58,6 +58,68 @@ async def get_user_with_settings(telegram_id: int) -> User | None:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+
+async def has_user_consented(telegram_id: int) -> bool:
+    """Проверяет, дал ли пользователь согласие на обработку данных."""
+    from bot.services import consent_cache
+    if consent_cache.has(telegram_id):
+        return True
+    async with session_maker() as session:
+        stmt = select(UserConsent.telegram_id).where(UserConsent.telegram_id == telegram_id)
+        found = (await session.execute(stmt)).scalar_one_or_none() is not None
+        if found:
+            consent_cache.add(telegram_id)
+        return found
+
+
+async def get_all_consented_ids() -> list[int]:
+    async with session_maker() as session:
+        stmt = select(UserConsent.telegram_id)
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_consent_gate_status(telegram_id: int) -> str:
+    """
+    consented — согласие есть;
+    needs_gate — зарегистрированный пользователь без согласия;
+    exempt — новый или незавершивший регистрацию.
+    """
+    from bot.services import consent_cache
+    if consent_cache.has(telegram_id):
+        return "consented"
+
+    async with session_maker() as session:
+        user_stmt = select(User.status).where(User.telegram_id == telegram_id)
+        status = (await session.execute(user_stmt)).scalar_one_or_none()
+
+        if status is None or status == ProfileStatus.INCOMPLETE:
+            return "exempt"
+
+        consent_stmt = select(UserConsent.telegram_id).where(UserConsent.telegram_id == telegram_id)
+        if (await session.execute(consent_stmt)).scalar_one_or_none() is not None:
+            consent_cache.add(telegram_id)
+            return "consented"
+
+        return "needs_gate"
+
+
+async def record_user_consent(telegram_id: int, username: str | None) -> None:
+    """Сохраняет согласие пользователя (идемпотентно)."""
+    from bot.services import consent_cache
+    async with session_maker() as session:
+        existing = await session.get(UserConsent, telegram_id)
+        if existing:
+            if username and existing.username != username:
+                existing.username = username
+                await session.commit()
+            consent_cache.add(telegram_id)
+            return
+
+        session.add(UserConsent(telegram_id=telegram_id, username=username))
+        await session.commit()
+        consent_cache.add(telegram_id)
+        logging.info(f"Пользователь {telegram_id} дал согласие на обработку данных.")
+
 async def update_user_field(telegram_id: int, field_name: str, value):
     """Обновляет одно конкретное поле в таблице users"""
     async with session_maker() as session:
@@ -69,6 +131,18 @@ async def update_user_field(telegram_id: int, field_name: str, value):
             if field_name == "city":
                 user.normalized_city = normalize_city(value)
             await session.commit()
+
+
+async def delete_user_profile(telegram_id: int) -> bool:
+    """Удаляет анкету и связанные данные (настройки, свайпы, жалобы). Согласие сохраняется."""
+    async with session_maker() as session:
+        user = await session.get(User, telegram_id)
+        if not user:
+            return False
+        await session.delete(user)
+        await session.commit()
+        logging.info(f"Профиль пользователя {telegram_id} удалён.")
+        return True
 
 async def update_settings_field(telegram_id: int, field_name: str, value):
     """Обновляет одно конкретное поле в таблице search_settings"""
@@ -83,6 +157,10 @@ async def update_settings_field(telegram_id: int, field_name: str, value):
 
 from sqlalchemy import select, and_, not_, exists, func
 from bot.database.models import SearchSettings, Swipe, ActionType, Report, ReportReason
+from datetime import datetime
+
+DAILY_LIKE_MESSAGE_LIMIT = 5
+LIKE_MESSAGE_MAX_LENGTH = 300
 
 
 def _apply_search_filters(stmt, settings: SearchSettings | None):
@@ -144,7 +222,29 @@ async def get_next_profile(user_id: int) -> User | None:
         return None
 
 
-async def add_swipe(from_user_id: int, to_user_id: int, action: ActionType) -> bool:
+async def get_like_messages_remaining_today(user_id: int) -> int:
+    """Сколько лайков с сообщением осталось на сегодня."""
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(Swipe)
+            .where(
+                Swipe.from_user_id == user_id,
+                Swipe.message.isnot(None),
+                Swipe.created_at >= today_start,
+            )
+        )
+        used = (await session.execute(stmt)).scalar_one()
+        return max(0, DAILY_LIKE_MESSAGE_LIMIT - used)
+
+
+async def add_swipe(
+    from_user_id: int,
+    to_user_id: int,
+    action: ActionType,
+    message: str | None = None,
+) -> bool:
     """
     Сохраняет свайп в БД.
     Возвращает True, если произошел взаимный мэтч (лайк в ответ на лайк).
@@ -156,13 +256,18 @@ async def add_swipe(from_user_id: int, to_user_id: int, action: ActionType) -> b
         )
         swipe = (await session.execute(stmt)).scalar_one_or_none()
         if swipe:
+            had_message = swipe.message is not None
             swipe.action = action
             swipe.is_mutual = False
+            swipe.message = message if action == ActionType.LIKE else None
+            if message and action == ActionType.LIKE and not had_message:
+                swipe.created_at = datetime.utcnow()
         else:
             swipe = Swipe(
                 from_user_id=from_user_id,
                 to_user_id=to_user_id,
                 action=action,
+                message=message if action == ActionType.LIKE else None,
             )
             session.add(swipe)
 
@@ -183,6 +288,31 @@ async def add_swipe(from_user_id: int, to_user_id: int, action: ActionType) -> b
 
         await session.commit()
         return is_match
+
+
+async def undo_swipe(from_user_id: int, to_user_id: int) -> bool:
+    """Отменяет свайп. Возвращает True, если запись была удалена."""
+    async with session_maker() as session:
+        stmt = select(Swipe).where(
+            Swipe.from_user_id == from_user_id,
+            Swipe.to_user_id == to_user_id,
+        )
+        swipe = (await session.execute(stmt)).scalar_one_or_none()
+        if not swipe:
+            return False
+
+        if swipe.is_mutual:
+            reverse_stmt = select(Swipe).where(
+                Swipe.from_user_id == to_user_id,
+                Swipe.to_user_id == from_user_id,
+            )
+            reverse_swipe = (await session.execute(reverse_stmt)).scalar_one_or_none()
+            if reverse_swipe:
+                reverse_swipe.is_mutual = False
+
+        await session.delete(swipe)
+        await session.commit()
+        return True
 
 
 def _pending_likes_conditions(user_id: int):
@@ -209,16 +339,21 @@ async def get_pending_likes_count(user_id: int) -> int:
         return (await session.execute(stmt)).scalar_one()
 
 
-async def get_pending_likes_ids(user_id: int) -> list[int]:
-    """Возвращает ID пользователей с неотвеченными лайками (сначала новые)."""
+async def get_pending_likes_data(user_id: int) -> list[tuple[int, str | None]]:
+    """Возвращает (telegram_id, message) неотвеченных лайков (сначала новые)."""
     async with session_maker() as session:
         stmt = (
-            select(User.telegram_id)
+            select(User.telegram_id, Swipe.message)
             .join(Swipe, Swipe.from_user_id == User.telegram_id)
             .where(*_pending_likes_conditions(user_id))
             .order_by(Swipe.created_at.desc())
         )
-        return list((await session.execute(stmt)).scalars().all())
+        return list((await session.execute(stmt)).all())
+
+
+async def get_pending_likes_ids(user_id: int) -> list[int]:
+    """Возвращает ID пользователей с неотвеченными лайками (сначала новые)."""
+    return [liker_id for liker_id, _ in await get_pending_likes_data(user_id)]
 
 
 async def get_next_pending_like(user_id: int) -> User | None:
@@ -226,18 +361,21 @@ async def get_next_pending_like(user_id: int) -> User | None:
     return await get_pending_like_at_index(user_id, 0)
 
 
-async def get_pending_like_at_index(user_id: int, index: int) -> tuple[User | None, int]:
-    """Возвращает анкету по индексу и общее количество неотвеченных лайков."""
-    liker_ids = await get_pending_likes_ids(user_id)
-    total = len(liker_ids)
+async def get_pending_like_at_index(
+    user_id: int, index: int,
+) -> tuple[User | None, int, str | None]:
+    """Возвращает анкету по индексу, общее количество и сообщение к лайку (если есть)."""
+    pending = await get_pending_likes_data(user_id)
+    total = len(pending)
     if total == 0:
-        return None, 0
+        return None, 0, None
 
     index = min(max(index, 0), total - 1)
+    liker_id, message = pending[index]
     async with session_maker() as session:
-        stmt = select(User).where(User.telegram_id == liker_ids[index])
+        stmt = select(User).where(User.telegram_id == liker_id)
         user = (await session.execute(stmt)).scalar_one_or_none()
-        return user, total
+        return user, total, message
 
 
 async def add_report(from_user_id: int, to_user_id: int, reason: ReportReason) -> bool:

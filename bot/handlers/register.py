@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from bot.states.fsm import RegisterForm, SearchSettingsForm
+from bot.database.requests import has_user_consented
 
 # Все необходимые импорты клавиатур собраны здесь
 from bot.keyboards.inline import (
@@ -18,6 +19,10 @@ router = Router()
 # ================= 1. НАЧАЛО РЕГИСТРАЦИИ =================
 @router.callback_query(F.data == "start_registration")
 async def start_registration(callback: CallbackQuery, state: FSMContext):
+    if not await has_user_consented(callback.from_user.id):
+        await callback.answer("Сначала нажми «✅ Согласен» в /start", show_alert=True)
+        return
+
     await state.clear()
     await callback.message.answer("Как тебя зовут? (имя или никнейм)")
     await state.set_state(RegisterForm.name)

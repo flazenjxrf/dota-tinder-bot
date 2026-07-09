@@ -1,16 +1,30 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.database.requests import get_user_with_settings, update_user_field, update_settings_field
+from bot.database.requests import (
+    get_user_with_settings,
+    update_user_field,
+    update_user_location,
+    update_settings_field,
+    delete_user_profile,
+)
 from bot.database.models import ProfileStatus
 from bot.states.fsm import EditProfile, EditSettings
 from bot.keyboards.inline import (
-    get_profile_menu_keyboard, get_edit_profile_fields_keyboard, get_edit_settings_fields_keyboard,
-    get_positions_keyboard, PositionCallback, get_search_positions_keyboard, SearchPositionCallback
+    get_profile_menu_keyboard,
+    get_edit_profile_fields_keyboard,
+    get_edit_settings_fields_keyboard,
+    get_positions_keyboard,
+    PositionCallback,
+    get_search_positions_keyboard,
+    SearchPositionCallback,
+    get_delete_profile_confirm_keyboard,
+    get_start_keyboard,
 )
-from bot.keyboards.reply import get_main_menu_keyboard
+from bot.keyboards.reply import get_main_menu_keyboard, get_city_keyboard
+from bot.utils.geolocation import reverse_geocode, round_coords, format_own_location_line
 
 router = Router()
 
@@ -32,7 +46,7 @@ def make_profile_caption(user) -> str:
 
     caption = (
         f"👤 <b>Твой профиль:</b>\n\n"
-        f"🌟 <b>{user.name}</b>, {user.age} | 📍 {user.city}\n"
+        f"🌟 <b>{user.name}</b>, {user.age} | {format_own_location_line(user)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {user.mmr}\n\n"
         f"💬 О себе:\n{user.bio}\n\n"
@@ -128,6 +142,62 @@ async def toggle_profile_status(callback: CallbackQuery):
     await callback.answer(f"Статус изменен на {'Показывается' if is_active else 'Скрыт'}!")
 
 
+# ================= УДАЛЕНИЕ АНКЕТЫ =================
+
+DELETE_CONFIRM_TEXT = (
+    "🗑 <b>Удалить анкету?</b>\n\n"
+    "Это необратимо: пропадут мэтчи, лайки, фильтры и все данные профиля.\n\n"
+    "Если нужна только пауза — нажми «Отмена» и используй «Скрыть анкету»."
+)
+
+
+@router.callback_query(F.data == "profile_delete")
+async def profile_delete_prompt(callback: CallbackQuery):
+    await callback.message.edit_caption(
+        caption=DELETE_CONFIRM_TEXT,
+        reply_markup=get_delete_profile_confirm_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "profile_delete_cancel")
+async def profile_delete_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user = await get_user_with_settings(callback.from_user.id)
+    if not user:
+        await callback.answer("Анкета уже удалена.", show_alert=True)
+        return
+
+    is_active = user.status == ProfileStatus.ACTIVE
+    await callback.message.edit_caption(
+        caption=make_profile_caption(user),
+        reply_markup=get_profile_menu_keyboard(is_active),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "profile_delete_confirm")
+async def profile_delete_confirm(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    if not await delete_user_profile(telegram_id):
+        await callback.answer("Анкета уже удалена.", show_alert=True)
+        return
+
+    await state.clear()
+    await callback.message.delete()
+    await callback.message.answer(
+        "🗑 <b>Анкета удалена.</b>\n\n"
+        "Мэтчи, лайки и все данные профиля удалены.\n"
+        "Чтобы снова искать напарников — нажми /start",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await callback.message.answer(
+        "Можешь создать новую анкету:",
+        reply_markup=get_start_keyboard(),
+    )
+    await callback.answer()
+
+
 # ================= МЕНЮ РЕДАКТИРОВАНИЯ =================
 
 @router.callback_query(F.data == "menu_edit_profile")
@@ -203,17 +273,50 @@ async def edit_age_finish(message: Message, state: FSMContext):
 # --- Изменение Города ---
 @router.callback_query(F.data == "edit_field_city")
 async def edit_city_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Из какого ты города?")
+    await callback.message.answer(
+        "Из какого ты города?\n\n"
+        "Можешь <b>отправить геолокацию</b> — город определится автоматически, "
+        "или просто напиши название города.",
+        reply_markup=get_city_keyboard(),
+    )
     await state.set_state(EditProfile.city)
     await callback.answer()
 
 
-@router.message(EditProfile.city)
+@router.message(EditProfile.city, F.location)
+async def edit_city_location(message: Message, state: FSMContext):
+    latitude, longitude = round_coords(message.location.latitude, message.location.longitude)
+    city = await reverse_geocode(latitude, longitude)
+    if not city:
+        await message.answer(
+            "Не удалось определить город по геолокации. "
+            "Попробуй ещё раз или введи название города вручную."
+        )
+        return
+
+    await update_user_location(message.from_user.id, city, latitude, longitude)
+    await state.clear()
+    await message.answer(
+        f"✅ Город обновлён: <b>{city}</b>",
+        reply_markup=get_main_menu_keyboard(),
+    )
+    await send_my_profile_message(message, message.from_user.id)
+
+
+@router.message(EditProfile.city, F.text)
 async def edit_city_finish(message: Message, state: FSMContext):
-    await update_user_field(message.from_user.id, "city", message.text)
+    if not message.text.strip():
+        await message.answer("Пожалуйста, введи название города или отправь геолокацию.")
+        return
+    await update_user_field(message.from_user.id, "city", message.text.strip())
     await state.clear()
     await message.answer("✅ Город успешно обновлен!", reply_markup=get_main_menu_keyboard())
     await send_my_profile_message(message, message.from_user.id)
+
+
+@router.message(EditProfile.city)
+async def edit_city_invalid(message: Message):
+    await message.answer("Отправь геолокацию кнопкой ниже или напиши название города.")
 
 
 # --- Изменение MMR ---

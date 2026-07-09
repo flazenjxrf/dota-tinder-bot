@@ -5,6 +5,9 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import BOT_TOKEN
 from bot.database.engine import init_models
+from bot.database.requests import get_all_consented_ids
+from bot.middleware.consent import ConsentMiddleware
+from bot.services import consent_cache
 
 # Импортируем все наши обработчики (хэндлеры)
 from bot.handlers import start, register, settings, profile, swiping, likes, report, matches, fallback
@@ -28,12 +31,18 @@ async def main():
         logger.error(f"Ошибка при инициализации БД: {e}")
         return
 
+    consent_ids = await get_all_consented_ids()
+    consent_cache.warm(consent_ids)
+    logger.info("Кэш согласий загружен: %d пользователей", len(consent_ids))
+
     # 3. Инициализация бота и диспетчера
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode="HTML")
     )
     dp = Dispatcher()
+    dp.message.middleware(ConsentMiddleware())
+    dp.callback_query.middleware(ConsentMiddleware())
 
     # 4. Подключение роутеров к диспетчеру (порядок важен)
     dp.include_router(start.router)

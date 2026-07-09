@@ -32,3 +32,6 @@ class EditSettings(StatesGroup):
     max_age = State()
     min_mmr = State()
     max_mmr = State()
+
+class SwipingForm(StatesGroup):
+    like_message = State()

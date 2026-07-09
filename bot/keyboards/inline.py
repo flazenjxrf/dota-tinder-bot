@@ -17,6 +17,15 @@ class SwipeCallback(CallbackData, prefix="sw"):
     action: str  # "like" или "dislike"
     to_user_id: int
 
+class UndoSwipeCallback(CallbackData, prefix="undo_sw"):
+    pass
+
+class LikeWithMessageCallback(CallbackData, prefix="lwm"):
+    to_user_id: int
+
+class LikeMessageCancelCallback(CallbackData, prefix="lwm_cancel"):
+    to_user_id: int
+
 # Для ответа на входящие лайки
 class LikeBackCallback(CallbackData, prefix="lb"):
     action: str  # "like" или "dislike"
@@ -43,6 +52,12 @@ class ReportReasonCallback(CallbackData, prefix="rep_r"):
 
 
 # ================= 2. КЛАВИАТУРЫ РЕГИСТРАЦИИ И ПОИСКА =================
+
+def get_consent_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Согласен", callback_data="accept_consent")
+    return builder.as_markup()
+
 
 def get_start_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -88,9 +103,17 @@ def get_profile_menu_keyboard(is_active: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Редактировать анкету", callback_data="menu_edit_profile")
     builder.button(text="⚙️ Фильтры поиска", callback_data="menu_edit_settings")
-    # Кнопка скрыть/показать профиль
     status_text = "⏸ Скрыть анкету" if is_active else "▶️ Показать в поиске"
     builder.button(text=status_text, callback_data="profile_toggle_status")
+    builder.button(text="🗑 Удалить анкету", callback_data="profile_delete")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_delete_profile_confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, удалить", callback_data="profile_delete_confirm")
+    builder.button(text="❌ Отмена", callback_data="profile_delete_cancel")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -130,12 +153,33 @@ REPORT_REASON_LABELS = {
 }
 
 
-def get_swipe_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
+def get_swipe_keyboard(
+    to_user_id: int,
+    can_undo: bool = False,
+    like_messages_remaining: int = 5,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if can_undo:
+        builder.button(text="⬅️ Назад", callback_data=UndoSwipeCallback().pack())
     builder.button(text="👎 Дизлайк", callback_data=SwipeCallback(action="dislike", to_user_id=to_user_id).pack())
     builder.button(text="❤️ Лайк", callback_data=SwipeCallback(action="like", to_user_id=to_user_id).pack())
+    builder.button(
+        text=f"💌 Лайк с сообщением (осталось: {like_messages_remaining})",
+        callback_data=LikeWithMessageCallback(to_user_id=to_user_id).pack(),
+    )
     builder.button(text="🚨 Жалоба", callback_data=ReportCallback(to_user_id=to_user_id, context="swipe").pack())
-    builder.adjust(2, 1)
+    if can_undo:
+        builder.adjust(1, 2, 1, 1)
+    else:
+        builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+def get_like_message_cancel_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="❌ Отмена",
+        callback_data=LikeMessageCancelCallback(to_user_id=to_user_id).pack(),
+    )
     return builder.as_markup()
 
 def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKeyboardMarkup:
