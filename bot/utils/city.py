@@ -69,3 +69,10 @@ def get_normalized_city(city: str | None, normalized_city: str | None = None) ->
     if normalized_city and normalized_city.strip():
         return normalized_city.strip()
     return normalize_city(city)
+
+
+def format_city_display(user) -> str:
+    """Город для отображения в анкете."""
+    if user.city and user.city.strip():
+        return user.city.strip()
+    return "Не указан"

@@ -6,7 +6,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.database.requests import (
     get_user_with_settings,
     update_user_field,
-    update_user_location,
     update_settings_field,
     delete_user_profile,
 )
@@ -23,8 +22,8 @@ from bot.keyboards.inline import (
     get_delete_profile_confirm_keyboard,
     get_start_keyboard,
 )
-from bot.keyboards.reply import get_main_menu_keyboard, get_city_keyboard
-from bot.utils.geolocation import reverse_geocode, round_coords, format_own_location_line
+from bot.keyboards.reply import get_main_menu_keyboard
+from bot.utils.city import format_city_display
 
 router = Router()
 
@@ -46,7 +45,7 @@ def make_profile_caption(user) -> str:
 
     caption = (
         f"👤 <b>Твой профиль:</b>\n\n"
-        f"🌟 <b>{user.name}</b>, {user.age} | {format_own_location_line(user)}\n"
+        f"🌟 <b>{user.name}</b>, {user.age} | {format_city_display(user)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {user.mmr}\n\n"
         f"💬 О себе:\n{user.bio}\n\n"
@@ -273,50 +272,20 @@ async def edit_age_finish(message: Message, state: FSMContext):
 # --- Изменение Города ---
 @router.callback_query(F.data == "edit_field_city")
 async def edit_city_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer(
-        "Из какого ты города?\n\n"
-        "Можешь <b>отправить геолокацию</b> — город определится автоматически, "
-        "или просто напиши название города.",
-        reply_markup=get_city_keyboard(),
-    )
+    await callback.message.answer("Из какого ты города?")
     await state.set_state(EditProfile.city)
     await callback.answer()
 
 
-@router.message(EditProfile.city, F.location)
-async def edit_city_location(message: Message, state: FSMContext):
-    latitude, longitude = round_coords(message.location.latitude, message.location.longitude)
-    city = await reverse_geocode(latitude, longitude)
-    if not city:
-        await message.answer(
-            "Не удалось определить город по геолокации. "
-            "Попробуй ещё раз или введи название города вручную."
-        )
-        return
-
-    await update_user_location(message.from_user.id, city, latitude, longitude)
-    await state.clear()
-    await message.answer(
-        f"✅ Город обновлён: <b>{city}</b>",
-        reply_markup=get_main_menu_keyboard(),
-    )
-    await send_my_profile_message(message, message.from_user.id)
-
-
-@router.message(EditProfile.city, F.text)
+@router.message(EditProfile.city)
 async def edit_city_finish(message: Message, state: FSMContext):
-    if not message.text.strip():
-        await message.answer("Пожалуйста, введи название города или отправь геолокацию.")
+    if not message.text or not message.text.strip():
+        await message.answer("Пожалуйста, введи название города.")
         return
     await update_user_field(message.from_user.id, "city", message.text.strip())
     await state.clear()
     await message.answer("✅ Город успешно обновлен!", reply_markup=get_main_menu_keyboard())
     await send_my_profile_message(message, message.from_user.id)
-
-
-@router.message(EditProfile.city)
-async def edit_city_invalid(message: Message):
-    await message.answer("Отправь геолокацию кнопкой ниже или напиши название города.")
 
 
 # --- Изменение MMR ---

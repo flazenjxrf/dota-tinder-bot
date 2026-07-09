@@ -24,7 +24,7 @@ from bot.keyboards.inline import (
 )
 from bot.keyboards.reply import get_main_menu_keyboard
 from bot.utils.profile_display import send_profile_card
-from bot.utils.geolocation import format_location_line
+from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 from bot.states.fsm import SwipingForm
 
@@ -56,12 +56,12 @@ def format_pending_likes_notification(count: int) -> str:
     )
 
 
-def build_browse_caption(profile: User, viewer: User | None = None) -> str:
+def build_browse_caption(profile: User) -> str:
     pos_names = [positions_mapping[p] for p in sorted(profile.positions)]
     pos_str = ", ".join(pos_names)
     return (
         f"🎮 <b>Напарник найден:</b>\n\n"
-        f"🌟 <b>{profile.name}</b>, {profile.age} | {format_location_line(viewer, profile)}\n"
+        f"🌟 <b>{profile.name}</b>, {profile.age} | {format_city_display(profile)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {profile.mmr}\n\n"
         f"💬 О себе:\n{profile.bio}"
@@ -146,7 +146,7 @@ async def show_browse_profile(
     await send_profile_card(
         message_or_callback,
         profile.photo_file_id,
-        build_browse_caption(profile, viewer),
+        build_browse_caption(profile),
         get_swipe_keyboard(
             profile.telegram_id,
             can_undo=can_undo,
