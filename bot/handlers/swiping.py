@@ -43,6 +43,23 @@ HIDDEN_PROFILE_MSG = (
 )
 
 LIKE_NOTIFY_THRESHOLDS = {1, 5, 20}
+UNDO_PROFILE_KEY = "undo_profile_id"
+
+
+async def get_undo_profile_id(state: FSMContext) -> int | None:
+    return (await state.get_data()).get(UNDO_PROFILE_KEY)
+
+
+async def set_undo_profile(state: FSMContext, profile_id: int | None) -> None:
+    await state.update_data(**{UNDO_PROFILE_KEY: profile_id})
+
+
+async def clear_like_message_state(state: FSMContext) -> None:
+    """Сбрасывает ввод лайка с сообщением, сохраняя возможность вернуться после дизлайка."""
+    data = await state.get_data()
+    undo_profile_id = data.get(UNDO_PROFILE_KEY)
+    await state.set_state(None)
+    await state.update_data(like_message_to_user_id=None, **{UNDO_PROFILE_KEY: undo_profile_id})
 
 
 def format_pending_likes_notification(count: int) -> str:
@@ -171,8 +188,7 @@ async def show_next_profile(message_or_callback, user_id: int, state: FSMContext
     can_undo = False
     viewer = None
     if state:
-        data = await state.get_data()
-        can_undo = data.get("undo_profile_id") is not None
+        can_undo = (await get_undo_profile_id(state)) is not None
     viewer = await get_user_with_settings(user_id)
 
     await show_browse_profile(message_or_callback, next_user, can_undo=can_undo, viewer=viewer)
@@ -224,9 +240,9 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback, s
     )
 
     if action == ActionType.DISLIKE:
-        await state.update_data(undo_profile_id=to_user_id)
+        await set_undo_profile(state, to_user_id)
     else:
-        await state.update_data(undo_profile_id=None)
+        await set_undo_profile(state, None)
     await callback.answer()
 
     # 3. Автоматически показываем следующего человека
@@ -245,18 +261,17 @@ async def undo_last_swipe(callback: CallbackQuery, state: FSMContext):
         )
         return
 
-    data = await state.get_data()
-    undo_profile_id = data.get("undo_profile_id")
+    undo_profile_id = await get_undo_profile_id(state)
     if not undo_profile_id:
         await callback.answer("Нет анкеты для возврата.", show_alert=True)
         return
 
     if not await undo_swipe(from_user_id, undo_profile_id):
-        await state.update_data(undo_profile_id=None)
+        await set_undo_profile(state, None)
         await callback.answer("Не удалось вернуть анкету.", show_alert=True)
         return
 
-    await state.update_data(undo_profile_id=None)
+    await set_undo_profile(state, None)
 
     profile = await get_user_with_settings(undo_profile_id)
     if not profile or profile.status != ProfileStatus.ACTIVE:
@@ -265,7 +280,7 @@ async def undo_last_swipe(callback: CallbackQuery, state: FSMContext):
         return
 
     viewer = await get_user_with_settings(from_user_id)
-    await callback.answer()
+    await callback.answer("Вернули предыдущую анкету")
     await show_browse_profile(callback, profile, can_undo=False, viewer=viewer)
 
 
@@ -310,8 +325,8 @@ async def cancel_like_with_message(
     state: FSMContext,
 ):
     data = await state.get_data()
-    can_undo = data.get("undo_profile_id") is not None
-    await state.clear()
+    can_undo = data.get(UNDO_PROFILE_KEY) is not None
+    await clear_like_message_state(state)
     await callback.answer("Отменено")
 
     profile = await get_user_with_settings(callback_data.to_user_id)
@@ -352,8 +367,8 @@ async def finish_like_with_message(message: Message, state: FSMContext):
         return
 
     is_match = await add_swipe(from_user_id, to_user_id, ActionType.LIKE, message=text)
-    await state.update_data(undo_profile_id=None)
-    await state.clear()
+    await set_undo_profile(state, None)
+    await clear_like_message_state(state)
 
     await process_like_notifications(
         message.bot,

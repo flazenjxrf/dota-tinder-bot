@@ -82,8 +82,9 @@ async def submit_report(callback: CallbackQuery, callback_data: ReportReasonCall
     await callback.answer()
 
     if callback_data.context == "swipe":
-        from bot.handlers.swiping import show_next_profile
-        await state.update_data(undo_profile_id=None)
+        from bot.handlers.swiping import show_next_profile, set_undo_profile
+        if created:
+            await set_undo_profile(state, to_user_id)
         await show_next_profile(callback, from_user_id, state=state)
     else:
         from bot.handlers.likes import show_pending_like_at_index

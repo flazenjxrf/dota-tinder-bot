@@ -160,7 +160,7 @@ def get_swipe_keyboard(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if can_undo:
-        builder.button(text="⬅️ Назад", callback_data=UndoSwipeCallback().pack())
+        builder.button(text="⬅️ Вернуть предыдущую", callback_data=UndoSwipeCallback().pack())
     builder.button(text="👎 Дизлайк", callback_data=SwipeCallback(action="dislike", to_user_id=to_user_id).pack())
     builder.button(text="❤️ Лайк", callback_data=SwipeCallback(action="like", to_user_id=to_user_id).pack())
     builder.button(
