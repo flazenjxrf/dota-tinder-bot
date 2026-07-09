@@ -1,10 +1,9 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
-from bot.config import DATABASE_URL
+from bot.config import DATABASE_URL, DB_ECHO
 from bot.database.models import Base
 
-# echo=True будет выводить все SQL-запросы в консоль (удобно для дебага, в продакшене лучше выключить)
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=DB_ECHO)
 
 # Фабрика сессий. Через неё мы будем делать запросы к БД
 session_maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)

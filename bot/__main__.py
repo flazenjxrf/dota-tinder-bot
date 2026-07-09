@@ -23,14 +23,33 @@ async def main():
     logger = logging.getLogger(__name__)
     logger.info("Запуск бота...")
 
-    # 2. Инициализация базы данных
-    logger.info("Подключение к PostgreSQL и инициализация таблиц...")
-    try:
-        await init_models()
-        logger.info("База данных успешно инициализирована!")
-    except Exception as e:
-        logger.error(f"Ошибка при инициализации БД: {e}")
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN не задан. Добавь переменную окружения в Railway.")
         return
+
+    # 2. Инициализация базы данных (с повторами — БД на Railway может подниматься чуть дольше)
+    logger.info("Подключение к PostgreSQL и инициализация таблиц...")
+    db_ready = False
+    for attempt in range(1, 11):
+        try:
+            await init_models()
+            db_ready = True
+            break
+        except Exception as e:
+            if attempt == 10:
+                logger.error("Не удалось подключиться к БД после 10 попыток: %s", e)
+                return
+            logger.warning(
+                "БД недоступна (попытка %d/10), повтор через 3 сек: %s",
+                attempt,
+                e,
+            )
+            await asyncio.sleep(3)
+
+    if not db_ready:
+        return
+
+    logger.info("База данных успешно инициализирована!")
 
     consent_ids = await get_all_consented_ids()
     consent_cache.warm(consent_ids)
