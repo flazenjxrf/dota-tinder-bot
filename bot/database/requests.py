@@ -527,13 +527,20 @@ async def is_user_banned(telegram_id: int) -> bool:
         if banned:
             ban_cache.add(telegram_id)
             return True
+        user = await session.get(User, telegram_id)
+        if user and user.status == ProfileStatus.BANNED:
+            ban_cache.add(telegram_id)
+            return True
         return False
 
 
 async def get_all_banned_ids() -> list[int]:
     async with session_maker() as session:
-        stmt = select(BannedUser.telegram_id)
-        return list((await session.execute(stmt)).scalars().all())
+        from_table = set((await session.execute(select(BannedUser.telegram_id))).scalars().all())
+        from_status = set((await session.execute(
+            select(User.telegram_id).where(User.status == ProfileStatus.BANNED)
+        )).scalars().all())
+        return list(from_table | from_status)
 
 
 async def ban_user(telegram_id: int, banned_by: int, reason: str | None = None) -> bool:

@@ -38,12 +38,27 @@ async def send_banned_user_menu(message: Message) -> None:
         await send_my_profile_message(message, message.from_user.id)
         return
 
-    from bot.keyboards.inline import get_banned_profile_menu_keyboard
     has_pending = await has_pending_unban_request(message.from_user.id)
     await message.answer(
         BAN_MENU_TEXT,
         reply_markup=get_banned_profile_menu_keyboard(has_pending),
     )
+
+
+async def reject_banned_message(message: Message) -> bool:
+    """Возвращает True, если пользователь забанен и действие нужно прервать."""
+    if await is_user_banned(message.from_user.id):
+        await send_banned_user_menu(message)
+        return True
+    return False
+
+
+async def reject_banned_callback(callback: CallbackQuery) -> bool:
+    """Возвращает True, если пользователь забанен и действие нужно прервать."""
+    if await is_user_banned(callback.from_user.id):
+        await callback.answer("Аккаунт заблокирован.", show_alert=True)
+        return True
+    return False
 
 
 @router.callback_query(F.data == "banned_unban_pending")

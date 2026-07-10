@@ -29,6 +29,7 @@ from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 from bot.states.fsm import SwipingForm
+from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
 
@@ -221,6 +222,9 @@ async def show_next_profile(message_or_callback, user_id: int, state: FSMContext
 # ================= КНОПКА "СМОТРЕТЬ АНКЕТЫ" В ГЛАВНОМ МЕНЮ =================
 @router.message(Command(CMD_BROWSE))
 async def start_swiping(message: Message, state: FSMContext):
+    if await reject_banned_message(message):
+        return
+
     await state.clear()
 
     # Сначала проверяем, есть ли у самого юзера анкета
@@ -239,6 +243,9 @@ async def start_swiping(message: Message, state: FSMContext):
 # ================= ОБРАБОТКА ЛАЙКА / ДИЗЛАЙКА =================
 @router.callback_query(SwipeCallback.filter())
 async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback, state: FSMContext):
+    if await reject_banned_callback(callback):
+        return
+
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
     if not user or user.status == ProfileStatus.HIDDEN:
@@ -276,6 +283,9 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback, s
 # ================= ВОЗВРАТ К ПРЕДЫДУЩЕЙ АНКЕТЕ =================
 @router.callback_query(UndoSwipeCallback.filter())
 async def undo_last_swipe(callback: CallbackQuery, state: FSMContext):
+    if await reject_banned_callback(callback):
+        return
+
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
     if not user or user.status == ProfileStatus.HIDDEN:
@@ -315,6 +325,9 @@ async def start_like_with_message(
     callback_data: LikeWithMessageCallback,
     state: FSMContext,
 ):
+    if await reject_banned_callback(callback):
+        return
+
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
     if not user or user.status == ProfileStatus.HIDDEN:
@@ -348,6 +361,9 @@ async def cancel_like_with_message(
     callback_data: LikeMessageCancelCallback,
     state: FSMContext,
 ):
+    if await reject_banned_callback(callback):
+        return
+
     data = await state.get_data()
     can_undo = data.get(UNDO_PROFILE_KEY) is not None
     await clear_like_message_state(state)
@@ -363,6 +379,9 @@ async def cancel_like_with_message(
 
 @router.message(SwipingForm.like_message, F.text)
 async def finish_like_with_message(message: Message, state: FSMContext):
+    if await reject_banned_message(message):
+        return
+
     from_user_id = message.from_user.id
     data = await state.get_data()
     to_user_id = data.get("like_message_to_user_id")

@@ -12,6 +12,7 @@ from bot.utils.bot_commands import CMD_LIKES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
+from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
 
@@ -63,6 +64,9 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
 # ================= КНОПКА "МОИ ЛАЙКИ" В ГЛАВНОМ МЕНЮ =================
 @router.message(Command(CMD_LIKES))
 async def start_viewing_likes(message: Message, state: FSMContext):
+    if await reject_banned_message(message):
+        return
+
     await state.clear()
     await show_pending_like_at_index(message, message.from_user.id, index=0)
 
@@ -70,6 +74,9 @@ async def start_viewing_likes(message: Message, state: FSMContext):
 # ================= ЛИСТАНИЕ ЛАЙКОВ =================
 @router.callback_query(LikeNavCallback.filter())
 async def navigate_likes(callback: CallbackQuery, callback_data: LikeNavCallback):
+    if await reject_banned_callback(callback):
+        return
+
     await show_pending_like_at_index(callback, callback.from_user.id, callback_data.index)
     await callback.answer()
 
@@ -82,6 +89,9 @@ async def likes_counter_noop(callback: CallbackQuery):
 # ================= ОБРАБОТКА ВЗАИМНОГО ЛАЙКА / ДИЗЛАЙКА =================
 @router.callback_query(LikeBackCallback.filter())
 async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallback):
+    if await reject_banned_callback(callback):
+        return
+
     from_user_id = callback.from_user.id
     to_user_id = callback_data.from_user_id
     action = ActionType.LIKE if callback_data.action == "like" else ActionType.DISLIKE

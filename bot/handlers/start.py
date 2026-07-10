@@ -26,6 +26,10 @@ AFTER_CONSENT_TEXT = (
     "Отлично! Теперь заполни анкету — так другие игроки смогут тебя найти 🎮"
 )
 
+RETURNING_USER_TEXT = (
+    "Привет! Рады снова видеть тебя в FeedEther 🎮\n\n"
+)
+
 RULES_TEXT = (
     "📌 <b>Правила бота</b>\n\n"
     "1. Запрещена реклама сторонних каналов, турниров, сервисов и любых внешних ресурсов\n\n"
@@ -53,7 +57,7 @@ async def cmd_start(message: Message):
             await message.answer(EXISTING_USER_CONSENT_TEXT, reply_markup=get_consent_keyboard())
             return
         await message.answer(
-            "Привет! С возвращением в Dota Tinder!\n\n" + MENU_HINT,
+            RETURNING_USER_TEXT + MENU_HINT,
             reply_markup=REMOVE_KEYBOARD,
         )
         from bot.middleware.keyboard import mark_keyboard_cleared

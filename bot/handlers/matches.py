@@ -10,6 +10,7 @@ from bot.utils.bot_commands import CMD_MATCHES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link
+from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
 
@@ -61,12 +62,18 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
 
 @router.message(Command(CMD_MATCHES))
 async def start_viewing_matches(message: Message, state: FSMContext):
+    if await reject_banned_message(message):
+        return
+
     await state.clear()
     await show_match_at_index(message, message.from_user.id, index=0)
 
 
 @router.callback_query(MatchNavCallback.filter())
 async def navigate_matches(callback: CallbackQuery, callback_data: MatchNavCallback):
+    if await reject_banned_callback(callback):
+        return
+
     await show_match_at_index(callback, callback.from_user.id, callback_data.index)
     await callback.answer()
 

@@ -40,14 +40,14 @@ def _is_exempt(event: TelegramObject, user_id: int, current_state: str | None = 
     if user_id in ADMIN_IDS:
         return True
 
-    if current_state and current_state.startswith(_BANNED_FSM_PREFIXES):
-        return True
-
     if isinstance(event, Message):
         text = event.text or ""
         if text.startswith("/admin") or text.startswith(f"/{CMD_FEEDBACK}"):
             return True
         if text.startswith(f"/{CMD_PROFILE}"):
+            return True
+        # Разрешаем только ввод текста в разрешённых FSM, не все события подряд
+        if current_state and current_state.startswith(_BANNED_FSM_PREFIXES):
             return True
 
     if isinstance(event, CallbackQuery):
