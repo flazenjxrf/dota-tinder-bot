@@ -17,12 +17,6 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_FEEDBACK, description="🐛 Сообщить о баге"),
 ]
 
-MENU_HINT = (
-    "Все разделы — в кнопке «Меню» слева от поля ввода 👇\n"
-    "/browse · /profile · /likes · /matches · /rules · /feedback"
-)
-
-
 def normalize_command(text: str | None) -> str | None:
     if not text or not text.startswith("/"):
         return None

@@ -9,7 +9,6 @@ from aiogram.types import Message, CallbackQuery, TelegramObject
 from bot.database.models import ProfileStatus
 from bot.database.requests import get_user_with_settings
 from bot.keyboards.reply import REMOVE_KEYBOARD
-from bot.utils.bot_commands import MENU_HINT
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,11 @@ async def _remove_legacy_keyboard(event: TelegramObject, user_id: int) -> None:
         return
 
     try:
-        await bot.send_message(chat_id, MENU_HINT, reply_markup=REMOVE_KEYBOARD)
+        sent = await bot.send_message(chat_id, "\u200b", reply_markup=REMOVE_KEYBOARD)
+        try:
+            await bot.delete_message(chat_id, sent.message_id)
+        except Exception:
+            pass
         mark_keyboard_cleared(user_id)
     except Exception as exc:
         logger.warning("Не удалось убрать reply-клавиатуру у %s: %s", user_id, exc)

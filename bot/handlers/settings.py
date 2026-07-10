@@ -6,7 +6,6 @@ from bot.states.fsm import SearchSettingsForm
 from bot.keyboards.inline import get_search_positions_keyboard, SearchPositionCallback, get_skip_keyboard
 from bot.database.requests import save_user_and_settings
 from bot.keyboards.reply import REMOVE_KEYBOARD
-from bot.utils.bot_commands import MENU_HINT
 
 router = Router()
 
@@ -133,7 +132,7 @@ async def finish_registration(user, message_obj: Message, state: FSMContext):
 
     await message_obj.answer(
         "✅ Все настройки успешно сохранены!\n\n"
-        f"Теперь ты можешь искать тимейтов. {MENU_HINT}",
+        "Теперь ты можешь искать тимейтов — отправь /browse.",
         reply_markup=REMOVE_KEYBOARD,
     )
     from bot.middleware.keyboard import mark_keyboard_cleared
