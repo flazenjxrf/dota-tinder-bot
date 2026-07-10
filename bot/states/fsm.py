@@ -39,3 +39,11 @@ class SwipingForm(StatesGroup):
 
 class ReportForm(StatesGroup):
     comment = State()
+
+
+class FeedbackForm(StatesGroup):
+    text = State()
+
+
+class UnbanRequestForm(StatesGroup):
+    message = State()

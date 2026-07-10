@@ -55,7 +55,7 @@ class ReportSkipCommentCallback(CallbackData, prefix="rep_skip"):
 
 
 class AdminMenuCallback(CallbackData, prefix="adm"):
-    action: str  # "menu", "reports", "stats", "bans"
+    action: str  # "menu", "reports", "feedback", "unban_requests", "stats", "bans"
 
 class AdminBanNavCallback(CallbackData, prefix="adm_bn"):
     index: int
@@ -70,6 +70,21 @@ class AdminReportNavCallback(CallbackData, prefix="adm_rn"):
 class AdminReportActionCallback(CallbackData, prefix="adm_act"):
     action: str  # "reject", "ban"
     report_id: int
+    index: int = 0
+
+class AdminFeedbackNavCallback(CallbackData, prefix="adm_fn"):
+    index: int
+
+class AdminFeedbackActionCallback(CallbackData, prefix="adm_fa"):
+    feedback_id: int
+    index: int = 0
+
+class AdminUnbanRequestNavCallback(CallbackData, prefix="adm_ur"):
+    index: int
+
+class AdminUnbanRequestActionCallback(CallbackData, prefix="adm_ura"):
+    action: str  # "approve", "reject"
+    request_id: int
     index: int = 0
 
 
@@ -121,7 +136,10 @@ def get_skip_keyboard(step: str) -> InlineKeyboardMarkup:
 
 # ================= 3. КЛАВИАТУРЫ ПРОФИЛЯ И РЕДАКТИРОВАНИЯ =================
 
-def get_profile_menu_keyboard(is_active: bool) -> InlineKeyboardMarkup:
+def get_profile_menu_keyboard(is_active: bool, is_banned: bool = False) -> InlineKeyboardMarkup:
+    if is_banned:
+        return get_banned_profile_menu_keyboard()
+
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Редактировать анкету", callback_data="menu_edit_profile")
     builder.button(text="⚙️ Фильтры поиска", callback_data="menu_edit_settings")
@@ -129,6 +147,23 @@ def get_profile_menu_keyboard(is_active: bool) -> InlineKeyboardMarkup:
     builder.button(text=status_text, callback_data="profile_toggle_status")
     builder.button(text="🗑 Удалить анкету", callback_data="profile_delete")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_banned_profile_menu_keyboard(has_pending_unban: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Редактировать анкету", callback_data="menu_edit_profile")
+    if has_pending_unban:
+        builder.button(text="⏳ Запрос на рассмотрении", callback_data="banned_unban_pending")
+    else:
+        builder.button(text="📝 Запросить разбан", callback_data="banned_request_unban")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_unban_request_cancel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отмена", callback_data="unban_request_cancel")
     return builder.as_markup()
 
 
@@ -302,11 +337,24 @@ def get_report_comment_keyboard() -> InlineKeyboardMarkup:
 
 # ================= 5. АДМИН-ПАНЕЛЬ =================
 
-def get_admin_menu_keyboard(pending_reports: int, banned_count: int = 0) -> InlineKeyboardMarkup:
+def get_admin_menu_keyboard(
+    pending_reports: int,
+    banned_count: int = 0,
+    pending_feedback: int = 0,
+    pending_unban: int = 0,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text=f"🚨 Жалобы ({pending_reports})",
         callback_data=AdminMenuCallback(action="reports").pack(),
+    )
+    builder.button(
+        text=f"🐛 Баги ({pending_feedback})",
+        callback_data=AdminMenuCallback(action="feedback").pack(),
+    )
+    builder.button(
+        text=f"📨 Разбан ({pending_unban})",
+        callback_data=AdminMenuCallback(action="unban_requests").pack(),
     )
     builder.button(
         text=f"🚫 Забаненные ({banned_count})",
@@ -353,6 +401,98 @@ def get_admin_reports_nav_keyboard(
         text="🚫 Заблокировать пользователя",
         callback_data=AdminReportActionCallback(
             action="ban", report_id=report_id, index=index,
+        ).pack(),
+    )
+    builder.button(
+        text="⬅️ В админ-панель",
+        callback_data=AdminMenuCallback(action="menu").pack(),
+    )
+    if total > 1:
+        builder.adjust(nav_count, 1, 1, 1)
+    else:
+        builder.adjust(1, 1, 1)
+    return builder.as_markup()
+
+
+def get_feedback_cancel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отмена", callback_data="feedback_cancel")
+    return builder.as_markup()
+
+
+def get_admin_feedback_nav_keyboard(
+    feedback_id: int,
+    index: int,
+    total: int,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    nav_count = 0
+    if total > 1:
+        if index > 0:
+            builder.button(
+                text="⬅️",
+                callback_data=AdminFeedbackNavCallback(index=index - 1).pack(),
+            )
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="admin_feedback_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(
+                text="➡️",
+                callback_data=AdminFeedbackNavCallback(index=index + 1).pack(),
+            )
+            nav_count += 1
+
+    builder.button(
+        text="✅ Прочитано",
+        callback_data=AdminFeedbackActionCallback(
+            feedback_id=feedback_id, index=index,
+        ).pack(),
+    )
+    builder.button(
+        text="⬅️ В админ-панель",
+        callback_data=AdminMenuCallback(action="menu").pack(),
+    )
+    if total > 1:
+        builder.adjust(nav_count, 1, 1)
+    else:
+        builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+def get_admin_unban_requests_nav_keyboard(
+    request_id: int,
+    index: int,
+    total: int,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    nav_count = 0
+    if total > 1:
+        if index > 0:
+            builder.button(
+                text="⬅️",
+                callback_data=AdminUnbanRequestNavCallback(index=index - 1).pack(),
+            )
+            nav_count += 1
+        builder.button(text=f"{index + 1}/{total}", callback_data="admin_unban_counter")
+        nav_count += 1
+        if index < total - 1:
+            builder.button(
+                text="➡️",
+                callback_data=AdminUnbanRequestNavCallback(index=index + 1).pack(),
+            )
+            nav_count += 1
+
+    builder.button(
+        text="✅ Одобрить разбан",
+        callback_data=AdminUnbanRequestActionCallback(
+            action="approve", request_id=request_id, index=index,
+        ).pack(),
+    )
+    builder.button(
+        text="❌ Отклонить",
+        callback_data=AdminUnbanRequestActionCallback(
+            action="reject", request_id=request_id, index=index,
         ).pack(),
     )
     builder.button(

@@ -67,6 +67,35 @@ async def init_models():
             )
         """))
         await conn.execute(text(
+            "ALTER TABLE banned_users ADD COLUMN IF NOT EXISTS violation_number INTEGER DEFAULT 1"
+        ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS ban_history (
+                id BIGSERIAL PRIMARY KEY,
+                telegram_id BIGINT NOT NULL,
+                banned_by BIGINT NOT NULL,
+                reason TEXT,
+                violation_number INTEGER NOT NULL DEFAULT 1,
+                banned_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                unbanned_at TIMESTAMP
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ban_history_telegram_id "
+            "ON ban_history (telegram_id)"
+        ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS unban_requests (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+                message TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                resolved_at TIMESTAMP,
+                resolved_by BIGINT
+            )
+        """))
+        await conn.execute(text(
             "ALTER TABLE reports ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'"
         ))
         await conn.execute(text(

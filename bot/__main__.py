@@ -13,7 +13,7 @@ from bot.services import consent_cache, ban_cache
 from bot.utils.bot_commands import setup_bot_commands
 
 # Импортируем все наши обработчики (хэндлеры)
-from bot.handlers import start, legacy_menu, register, settings, profile, swiping, likes, report, matches, admin, fallback
+from bot.handlers import start, legacy_menu, register, settings, profile, swiping, likes, report, matches, feedback, banned, admin, fallback
 
 
 async def main():
@@ -84,6 +84,8 @@ async def main():
     dp.include_router(likes.router)
     dp.include_router(matches.router)
     dp.include_router(report.router)
+    dp.include_router(feedback.router)
+    dp.include_router(banned.router)
     dp.include_router(admin.router)
     dp.include_router(fallback.router)
 

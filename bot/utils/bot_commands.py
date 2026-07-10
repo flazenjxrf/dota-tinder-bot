@@ -6,6 +6,7 @@ CMD_PROFILE = "profile"
 CMD_LIKES = "likes"
 CMD_MATCHES = "matches"
 CMD_RULES = "rules"
+CMD_FEEDBACK = "feedback"
 
 BOT_COMMANDS = [
     BotCommand(command=CMD_BROWSE, description="🔍 Смотреть анкеты"),
@@ -13,11 +14,12 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_LIKES, description="❤️ Мои лайки"),
     BotCommand(command=CMD_MATCHES, description="💚 Мои мэтчи"),
     BotCommand(command=CMD_RULES, description="📜 Правила"),
+    BotCommand(command=CMD_FEEDBACK, description="🐛 Сообщить о баге"),
 ]
 
 MENU_HINT = (
     "Все разделы — в кнопке «Меню» слева от поля ввода 👇\n"
-    "/browse · /profile · /likes · /matches · /rules"
+    "/browse · /profile · /likes · /matches · /rules · /feedback"
 )
 
 

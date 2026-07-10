@@ -9,7 +9,7 @@ from bot.database.requests import (
     add_swipe,
     undo_swipe,
     get_user_with_settings,
-    get_pending_likes_count,
+    get_pending_likes_ids,
     get_like_messages_remaining_today,
     DAILY_LIKE_MESSAGE_LIMIT,
     LIKE_MESSAGE_MAX_LENGTH,
@@ -71,8 +71,16 @@ def format_pending_likes_notification(count: int) -> str:
         likes_text = f"{count} неотвеченных лайков"
     return (
         f"🔔 <b>У тебя {likes_text}!</b>\n\n"
-        f"Загляни во вкладку <b>❤️ Мои лайки</b>, чтобы посмотреть анкеты."
+        f"Загляни в /likes, чтобы посмотреть анкеты."
     )
+
+
+def _crossed_like_notify_threshold(old_count: int, new_count: int) -> int | None:
+    """Возвращает порог (1, 5 или 20), если количество лайков его только что пересекло."""
+    for threshold in sorted(LIKE_NOTIFY_THRESHOLDS):
+        if old_count < threshold <= new_count:
+            return threshold
+    return None
 
 
 def build_browse_caption(profile: User) -> str:
@@ -91,8 +99,32 @@ def format_like_with_message_notification(sender_name: str, message_text: str) -
     return (
         f"💌 <b>{sender_name}</b> отправил(а) тебе лайк с сообщением:\n\n"
         f"<i>«{escape(message_text)}»</i>\n\n"
-        f"Загляни во вкладку <b>❤️ Мои лайки</b>, чтобы ответить."
+        f"Загляни в /likes, чтобы ответить."
     )
+
+
+async def _notify_pending_likes_threshold(
+    bot,
+    to_user_id: int,
+    from_user_id: int,
+) -> None:
+    """Уведомляет только при пересечении порога 1, 5 или 20 неотвеченных лайков."""
+    pending_ids = await get_pending_likes_ids(to_user_id)
+    if from_user_id not in pending_ids:
+        return
+
+    new_count = len(pending_ids)
+    threshold = _crossed_like_notify_threshold(new_count - 1, new_count)
+    if not threshold:
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=to_user_id,
+            text=format_pending_likes_notification(threshold),
+        )
+    except Exception:
+        pass
 
 
 async def process_like_notifications(
@@ -139,15 +171,7 @@ async def process_like_notifications(
         except Exception:
             pass
     else:
-        pending_count = await get_pending_likes_count(to_user_id)
-        if pending_count in LIKE_NOTIFY_THRESHOLDS:
-            try:
-                await bot.send_message(
-                    chat_id=to_user_id,
-                    text=format_pending_likes_notification(pending_count),
-                )
-            except Exception:
-                pass
+        await _notify_pending_likes_threshold(bot, to_user_id, from_user_id)
 
 
 async def show_browse_profile(

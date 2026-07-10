@@ -207,7 +207,10 @@ async def update_settings_field(telegram_id: int, field_name: str, value):
 
 
 from sqlalchemy import select, and_, not_, exists, func
-from bot.database.models import SearchSettings, Swipe, ActionType, Report, ReportReason, ReportStatus, BannedUser
+from bot.database.models import (
+    SearchSettings, Swipe, ActionType, Report, ReportReason, ReportStatus,
+    BugFeedback, FeedbackStatus, BannedUser, BanHistory, UnbanRequest, UnbanRequestStatus,
+)
 from datetime import datetime
 
 DAILY_LIKE_MESSAGE_LIMIT = 5
@@ -539,10 +542,22 @@ async def ban_user(telegram_id: int, banned_by: int, reason: str | None = None) 
         if await session.get(BannedUser, telegram_id):
             return False
 
+        history_count = (await session.execute(
+            select(func.count()).select_from(BanHistory).where(BanHistory.telegram_id == telegram_id)
+        )).scalar_one()
+        violation_number = history_count + 1
+
+        session.add(BanHistory(
+            telegram_id=telegram_id,
+            banned_by=banned_by,
+            reason=reason,
+            violation_number=violation_number,
+        ))
         session.add(BannedUser(
             telegram_id=telegram_id,
             banned_by=banned_by,
             reason=reason,
+            violation_number=violation_number,
         ))
 
         user = await session.get(User, telegram_id)
@@ -560,7 +575,10 @@ async def ban_user(telegram_id: int, banned_by: int, reason: str | None = None) 
 
         await session.commit()
         ban_cache.add(telegram_id)
-        logging.info("Пользователь %s заблокирован админом %s.", telegram_id, banned_by)
+        logging.info(
+            "Пользователь %s заблокирован админом %s (нарушение #%d).",
+            telegram_id, banned_by, violation_number,
+        )
         return True
 
 
@@ -598,6 +616,18 @@ async def unban_user(telegram_id: int) -> bool:
         if not banned:
             return False
 
+        history_entry = (await session.execute(
+            select(BanHistory)
+            .where(
+                BanHistory.telegram_id == telegram_id,
+                BanHistory.unbanned_at.is_(None),
+            )
+            .order_by(BanHistory.banned_at.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if history_entry:
+            history_entry.unbanned_at = datetime.utcnow()
+
         await session.delete(banned)
 
         user = await session.get(User, telegram_id)
@@ -607,6 +637,137 @@ async def unban_user(telegram_id: int) -> bool:
         await session.commit()
         ban_cache.remove(telegram_id)
         logging.info("Пользователь %s разблокирован.", telegram_id)
+        return True
+
+
+async def get_ban_history(telegram_id: int) -> list[BanHistory]:
+    async with session_maker() as session:
+        stmt = (
+            select(BanHistory)
+            .where(BanHistory.telegram_id == telegram_id)
+            .order_by(BanHistory.banned_at.asc())
+        )
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_current_ban(telegram_id: int) -> BannedUser | None:
+    async with session_maker() as session:
+        return await session.get(BannedUser, telegram_id)
+
+
+async def has_been_banned_before(telegram_id: int) -> bool:
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(BanHistory)
+            .where(
+                BanHistory.telegram_id == telegram_id,
+                BanHistory.unbanned_at.is_not(None),
+            )
+        )
+        return (await session.execute(stmt)).scalar_one() > 0
+
+
+async def add_unban_request(user_id: int, message: str) -> int | None:
+    async with session_maker() as session:
+        pending = (await session.execute(
+            select(UnbanRequest).where(
+                UnbanRequest.user_id == user_id,
+                UnbanRequest.status == UnbanRequestStatus.PENDING,
+            )
+        )).scalar_one_or_none()
+        if pending:
+            return None
+
+        request = UnbanRequest(user_id=user_id, message=message)
+        session.add(request)
+        await session.commit()
+        await session.refresh(request)
+        return request.id
+
+
+async def has_pending_unban_request(user_id: int) -> bool:
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(UnbanRequest)
+            .where(
+                UnbanRequest.user_id == user_id,
+                UnbanRequest.status == UnbanRequestStatus.PENDING,
+            )
+        )
+        return (await session.execute(stmt)).scalar_one() > 0
+
+
+async def get_pending_unban_requests_count() -> int:
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(UnbanRequest)
+            .where(UnbanRequest.status == UnbanRequestStatus.PENDING)
+        )
+        return (await session.execute(stmt)).scalar_one()
+
+
+async def get_pending_unban_request_ids() -> list[int]:
+    async with session_maker() as session:
+        stmt = (
+            select(UnbanRequest.id)
+            .where(UnbanRequest.status == UnbanRequestStatus.PENDING)
+            .order_by(UnbanRequest.created_at.asc())
+        )
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_unban_request_by_id(request_id: int) -> UnbanRequest | None:
+    async with session_maker() as session:
+        return await session.get(UnbanRequest, request_id)
+
+
+async def approve_unban_request(request_id: int, admin_id: int) -> bool:
+    async with session_maker() as session:
+        request = await session.get(UnbanRequest, request_id)
+        if not request or request.status != UnbanRequestStatus.PENDING:
+            return False
+
+        banned = await session.get(BannedUser, request.user_id)
+        if banned:
+            history_entry = (await session.execute(
+                select(BanHistory)
+                .where(
+                    BanHistory.telegram_id == request.user_id,
+                    BanHistory.unbanned_at.is_(None),
+                )
+                .order_by(BanHistory.banned_at.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            if history_entry:
+                history_entry.unbanned_at = datetime.utcnow()
+            await session.delete(banned)
+
+            user = await session.get(User, request.user_id)
+            if user and user.status == ProfileStatus.BANNED:
+                user.status = ProfileStatus.ACTIVE
+
+        request.status = UnbanRequestStatus.APPROVED
+        request.resolved_at = datetime.utcnow()
+        request.resolved_by = admin_id
+        await session.commit()
+
+        from bot.services import ban_cache
+        ban_cache.remove(request.user_id)
+        return True
+
+
+async def reject_unban_request(request_id: int, admin_id: int) -> bool:
+    async with session_maker() as session:
+        request = await session.get(UnbanRequest, request_id)
+        if not request or request.status != UnbanRequestStatus.PENDING:
+            return False
+        request.status = UnbanRequestStatus.REJECTED
+        request.resolved_at = datetime.utcnow()
+        request.resolved_by = admin_id
+        await session.commit()
         return True
 
 
@@ -672,5 +833,49 @@ async def reject_report(report_id: int) -> bool:
         if not report or report.status != ReportStatus.PENDING:
             return False
         report.status = ReportStatus.REJECTED
+        await session.commit()
+        return True
+
+
+async def add_bug_feedback(user_id: int, text: str) -> int:
+    async with session_maker() as session:
+        feedback = BugFeedback(user_id=user_id, text=text, status=FeedbackStatus.PENDING)
+        session.add(feedback)
+        await session.commit()
+        await session.refresh(feedback)
+        return feedback.id
+
+
+async def get_pending_feedback_count() -> int:
+    async with session_maker() as session:
+        stmt = (
+            select(func.count())
+            .select_from(BugFeedback)
+            .where(BugFeedback.status == FeedbackStatus.PENDING)
+        )
+        return (await session.execute(stmt)).scalar_one()
+
+
+async def get_pending_feedback_ids() -> list[int]:
+    async with session_maker() as session:
+        stmt = (
+            select(BugFeedback.id)
+            .where(BugFeedback.status == FeedbackStatus.PENDING)
+            .order_by(BugFeedback.created_at.asc())
+        )
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_feedback_by_id(feedback_id: int) -> BugFeedback | None:
+    async with session_maker() as session:
+        return await session.get(BugFeedback, feedback_id)
+
+
+async def mark_feedback_read(feedback_id: int) -> bool:
+    async with session_maker() as session:
+        feedback = await session.get(BugFeedback, feedback_id)
+        if not feedback or feedback.status != FeedbackStatus.PENDING:
+            return False
+        feedback.status = FeedbackStatus.READ
         await session.commit()
         return True

@@ -32,6 +32,17 @@ class ReportStatus(enum.Enum):
     RESOLVED = "resolved"
 
 
+class FeedbackStatus(enum.Enum):
+    PENDING = "pending"
+    READ = "read"
+
+
+class UnbanRequestStatus(enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -102,6 +113,19 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
 
+class BugFeedback(Base):
+    __tablename__ = "bug_feedback"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[FeedbackStatus] = mapped_column(
+        Enum(FeedbackStatus, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+        default=FeedbackStatus.PENDING,
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
 class BannedUser(Base):
     """Заблокированные пользователи. Запись сохраняется даже после удаления анкеты."""
     __tablename__ = "banned_users"
@@ -109,7 +133,36 @@ class BannedUser(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     banned_by: Mapped[int] = mapped_column(BigInteger)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    violation_number: Mapped[int] = mapped_column(Integer, default=1)
     banned_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class BanHistory(Base):
+    """Журнал всех банов — сохраняется после разбана."""
+    __tablename__ = "ban_history"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    banned_by: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    violation_number: Mapped[int] = mapped_column(Integer)
+    banned_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    unbanned_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class UnbanRequest(Base):
+    __tablename__ = "unban_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[UnbanRequestStatus] = mapped_column(
+        Enum(UnbanRequestStatus, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+        default=UnbanRequestStatus.PENDING,
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    resolved_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class UserConsent(Base):

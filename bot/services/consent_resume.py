@@ -11,6 +11,7 @@ _MENU_HANDLERS: dict[str, tuple[str, str]] = {
     "/likes": ("bot.handlers.likes", "start_viewing_likes"),
     "/matches": ("bot.handlers.matches", "start_viewing_matches"),
     "/rules": ("bot.handlers.start", "show_rules"),
+    "/feedback": ("bot.handlers.feedback", "start_feedback"),
 }
 
 
