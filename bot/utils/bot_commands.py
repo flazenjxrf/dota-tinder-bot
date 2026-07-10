@@ -7,6 +7,7 @@ CMD_LIKES = "likes"
 CMD_MATCHES = "matches"
 CMD_RULES = "rules"
 CMD_FEEDBACK = "feedback"
+CMD_RESTART = "restart"
 
 BOT_COMMANDS = [
     BotCommand(command=CMD_BROWSE, description="🔍 Смотреть анкеты"),
@@ -15,6 +16,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_MATCHES, description="💚 Мои мэтчи"),
     BotCommand(command=CMD_RULES, description="📜 Правила"),
     BotCommand(command=CMD_FEEDBACK, description="🐛 Сообщить о баге"),
+    BotCommand(command=CMD_RESTART, description="♻️ Перезапустить меню"),
 ]
 
 def normalize_command(text: str | None) -> str | None:

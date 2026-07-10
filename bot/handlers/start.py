@@ -9,7 +9,7 @@ from bot.keyboards.inline import get_consent_keyboard, get_start_keyboard
 from bot.keyboards.reply import hide_reply_keyboard, REMOVE_KEYBOARD
 from bot.middleware.consent import CONSENT_GATE_SHOWN, EXISTING_USER_CONSENT_TEXT
 from bot.services.consent_resume import resume_pending_menu_action
-from bot.utils.bot_commands import CMD_RULES
+from bot.utils.bot_commands import CMD_RESTART, CMD_RULES
 
 router = Router()
 
@@ -104,3 +104,13 @@ async def cmd_menu(message: Message):
 async def show_rules(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(RULES_TEXT)
+
+
+@router.message(Command(CMD_RESTART))
+async def cmd_restart(message: Message):
+    await hide_reply_keyboard(
+        message,
+        "Готово, меню перезапущено ✅\n"
+        "Если снизу оставались старые кнопки, они скрыты.\n"
+        "Пользуйся командами через / или открой меню команд Telegram.",
+    )
