@@ -9,7 +9,7 @@ from bot.keyboards.inline import get_consent_keyboard, get_start_keyboard
 from bot.keyboards.reply import hide_reply_keyboard, REMOVE_KEYBOARD
 from bot.middleware.consent import CONSENT_GATE_SHOWN, EXISTING_USER_CONSENT_TEXT
 from bot.services.consent_resume import resume_pending_menu_action
-from bot.utils.bot_commands import CMD_RULES, MENU_HINT
+from bot.utils.bot_commands import CMD_RULES
 
 router = Router()
 
@@ -26,9 +26,7 @@ AFTER_CONSENT_TEXT = (
     "Отлично! Теперь заполни анкету — так другие игроки смогут тебя найти 🎮"
 )
 
-RETURNING_USER_TEXT = (
-    "Привет! Рады снова видеть тебя в FeedEther 🎮\n\n"
-)
+RETURNING_USER_TEXT = "Привет! Рады снова видеть тебя в FeedEther 🎮"
 
 RULES_TEXT = (
     "📌 <b>Правила бота</b>\n\n"
@@ -57,7 +55,7 @@ async def cmd_start(message: Message):
             await message.answer(EXISTING_USER_CONSENT_TEXT, reply_markup=get_consent_keyboard())
             return
         await message.answer(
-            RETURNING_USER_TEXT + MENU_HINT,
+            RETURNING_USER_TEXT,
             reply_markup=REMOVE_KEYBOARD,
         )
         from bot.middleware.keyboard import mark_keyboard_cleared
