@@ -12,6 +12,7 @@ from bot.database.requests import (
     is_user_banned,
     has_pending_unban_request,
     get_current_ban,
+    get_reputation_counts,
 )
 from bot.database.models import ProfileStatus
 from bot.states.fsm import EditProfile, EditSettings
@@ -30,7 +31,7 @@ from bot.keyboards.inline import (
 from bot.handlers.start import CONSENT_TEXT
 from bot.utils.bot_commands import CMD_PROFILE
 from bot.utils.city import format_city_display
-from bot.utils.reputation import format_reputation_line
+from bot.utils.reputation import format_reputation_line_from_counts
 
 router = Router()
 
@@ -60,7 +61,7 @@ def make_profile_caption(user, ban_reason: str | None = None, reputation: str = 
         f"🌟 <b>{user.name}</b>, {user.age} | {format_city_display(user)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {user.mmr}{reputation}\n\n"
-        f"💬 О себе: {user.bio}\n\n"
+        f"💬 : {user.bio}\n\n"
         f"📢 Статус анкеты: {status_emoji}\n"
     )
     if ban_reason:
@@ -69,7 +70,8 @@ def make_profile_caption(user, ban_reason: str | None = None, reputation: str = 
 
 
 async def _profile_caption_for(user, telegram_id: int, ban_reason: str | None = None) -> str:
-    reputation = await format_reputation_line(telegram_id)
+    aura_count, vibe_count = await get_reputation_counts(telegram_id)
+    reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     return make_profile_caption(user, ban_reason, reputation)
 
 
@@ -78,7 +80,13 @@ async def _get_profile_keyboard(telegram_id: int, user) -> InlineKeyboardMarkup:
     if is_banned:
         has_pending = await has_pending_unban_request(telegram_id)
         return get_banned_profile_menu_keyboard(has_pending)
-    return get_profile_menu_keyboard(user.status == ProfileStatus.ACTIVE)
+    aura_count, vibe_count = await get_reputation_counts(telegram_id)
+    return get_profile_menu_keyboard(
+        user.status == ProfileStatus.ACTIVE,
+        aura_count=aura_count,
+        vibe_count=vibe_count,
+        user_id=telegram_id,
+    )
 
 
 async def send_my_profile_message(message: Message, telegram_id: int):
@@ -171,7 +179,7 @@ async def toggle_profile_status(callback: CallbackQuery):
     is_active = (new_status == ProfileStatus.ACTIVE)
     await callback.message.edit_caption(
         caption=await _profile_caption_for(user, callback.from_user.id),
-        reply_markup=get_profile_menu_keyboard(is_active)
+        reply_markup=await _get_profile_keyboard(callback.from_user.id, user),
     )
     await callback.answer(f"Статус изменен на {'Показывается' if is_active else 'Скрыт'}!")
 
@@ -209,7 +217,7 @@ async def profile_delete_cancel(callback: CallbackQuery, state: FSMContext):
     is_active = user.status == ProfileStatus.ACTIVE
     await callback.message.edit_caption(
         caption=await _profile_caption_for(user, callback.from_user.id),
-        reply_markup=get_profile_menu_keyboard(is_active),
+        reply_markup=await _get_profile_keyboard(callback.from_user.id, user),
     )
     await callback.answer()
 

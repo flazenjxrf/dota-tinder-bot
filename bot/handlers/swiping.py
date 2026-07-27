@@ -12,6 +12,7 @@ from bot.database.requests import (
     get_user_with_settings,
     get_pending_likes_ids,
     get_like_messages_remaining_today,
+    get_reputation_counts,
     DAILY_LIKE_MESSAGE_LIMIT,
     LIKE_MESSAGE_MAX_LENGTH,
 )
@@ -29,7 +30,7 @@ from bot.utils.bot_commands import CMD_BROWSE
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
-from bot.utils.reputation import format_reputation_line
+from bot.utils.reputation import format_reputation_line_from_counts
 from bot.states.fsm import SwipingForm
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
@@ -94,7 +95,7 @@ def build_browse_caption(profile: User, reputation: str = "") -> str:
         f"🌟 <b>{profile.name}</b>, {profile.age} | {format_city_display(profile)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {profile.mmr}{reputation}\n\n"
-        f"💬 О себе: {profile.bio}"
+        f"💬 : {profile.bio}"
     )
 
 
@@ -187,7 +188,8 @@ async def show_browse_profile(
     if viewer:
         remaining = await get_like_messages_remaining_today(viewer.telegram_id)
 
-    reputation = await format_reputation_line(profile.telegram_id)
+    aura_count, vibe_count = await get_reputation_counts(profile.telegram_id)
+    reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     await send_profile_card(
         message_or_callback,
         profile.photo_file_id,
@@ -196,6 +198,8 @@ async def show_browse_profile(
             profile.telegram_id,
             can_undo=can_undo,
             like_messages_remaining=remaining,
+            aura_count=aura_count,
+            vibe_count=vibe_count,
         ),
     )
 

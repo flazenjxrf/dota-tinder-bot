@@ -4,7 +4,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from html import escape
 
-from bot.database.requests import get_pending_like_at_index, add_swipe, get_user_with_settings
+from bot.database.requests import (
+    get_pending_like_at_index,
+    add_swipe,
+    get_user_with_settings,
+    get_reputation_counts,
+)
 from bot.database.models import ActionType
 from bot.keyboards.inline import get_likeback_keyboard, LikeBackCallback, LikeNavCallback
 from bot.keyboards.reply import REMOVE_KEYBOARD
@@ -12,7 +17,7 @@ from bot.utils.bot_commands import CMD_LIKES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
-from bot.utils.reputation import format_reputation_line
+from bot.utils.reputation import format_reputation_line_from_counts
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
@@ -44,7 +49,8 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
     actual_index = min(max(index, 0), total - 1)
     pos_names = [positions_mapping[p] for p in sorted(next_user.positions)]
     pos_str = ", ".join(pos_names)
-    reputation = await format_reputation_line(next_user.telegram_id)
+    aura_count, vibe_count = await get_reputation_counts(next_user.telegram_id)
+    reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     caption = (
         f"🔥 <b>Ты понравился этому игроку</b> ({actual_index + 1}/{total}):\n\n"
         f"🌟 <b>{next_user.name}</b>, {next_user.age} | {format_city_display(next_user)}\n"
@@ -59,7 +65,13 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
         message_or_callback,
         next_user.photo_file_id,
         caption,
-        get_likeback_keyboard(next_user.telegram_id, actual_index, total),
+        get_likeback_keyboard(
+            next_user.telegram_id,
+            actual_index,
+            total,
+            aura_count=aura_count,
+            vibe_count=vibe_count,
+        ),
     )
 
 

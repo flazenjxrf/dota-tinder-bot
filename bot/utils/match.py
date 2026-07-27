@@ -61,9 +61,9 @@ async def send_match_notification(
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            f"🎉 <b>Взаимная симпатия!</b>\n\n"
+            f"🎉 <b>Новый мэтч!</b>\n\n"
             f"{intro_text}\n"
-            f"Свяжись с {partner_link} и соберите пати! 🎮"
+            f"Свяжись с {partner_link}, а после игры можешь оставить +rep в мэтчах! 🎮"
         ),
     )
     await _send_profile_to_chat(bot, chat_id, partner)

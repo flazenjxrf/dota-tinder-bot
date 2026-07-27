@@ -591,11 +591,11 @@ async def add_teammate_rating(
 
         if aura:
             if rating.has_aura:
-                return "Ты уже поставил ✨ Aura этому игроку."
+                return "Ты уже поставил 🔥 Aura этому игроку."
             rating.has_aura = True
         if vibe:
             if rating.has_vibe:
-                return "Ты уже поставил 💬 Vibe этому игроку."
+                return "Ты уже поставил 💜 Vibe этому игроку."
             rating.has_vibe = True
 
         rating.updated_at = datetime.utcnow()

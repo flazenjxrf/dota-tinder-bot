@@ -7,14 +7,27 @@ from bot.database.requests import (
     get_match_at_index,
     get_teammate_rating,
     add_teammate_rating,
+    get_reputation_counts,
 )
-from bot.keyboards.inline import get_match_keyboard, MatchNavCallback, MatchRateCallback
+from bot.keyboards.inline import (
+    get_match_keyboard,
+    MatchNavCallback,
+    MatchRateCallback,
+    ReputationInfoCallback,
+)
 from bot.keyboards.reply import REMOVE_KEYBOARD
 from bot.utils.bot_commands import CMD_MATCHES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link
-from bot.utils.reputation import format_reputation_line
+from bot.utils.reputation import (
+    format_reputation_line_from_counts,
+    format_reputation_info,
+    AURA_EMOJI,
+    VIBE_EMOJI,
+    AURA_LABEL,
+    VIBE_LABEL,
+)
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
@@ -47,7 +60,8 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
     pos_names = [POSITIONS_MAPPING[p] for p in sorted(partner.positions)]
     pos_str = ", ".join(pos_names)
     contact = get_user_link(partner.telegram_id, partner.name, partner.username)
-    reputation = await format_reputation_line(partner.telegram_id)
+    aura_count, vibe_count = await get_reputation_counts(partner.telegram_id)
+    reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     has_aura, has_vibe = await get_teammate_rating(user_id, partner.telegram_id)
     caption = (
         f"💚 <b>Мэтч</b> ({actual_index + 1}/{total}):\n\n"
@@ -64,6 +78,8 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
         partner.telegram_id,
         has_aura=has_aura,
         has_vibe=has_vibe,
+        aura_count=aura_count,
+        vibe_count=vibe_count,
     )
     await send_profile_card(
         message_or_callback,
@@ -112,9 +128,25 @@ async def rate_match_partner(callback: CallbackQuery, callback_data: MatchRateCa
         await callback.answer(error, show_alert=True)
         return
 
-    label = "✨ Aura" if aura else "💬 Vibe"
+    label = f"{AURA_EMOJI} {AURA_LABEL}" if aura else f"{VIBE_EMOJI} {VIBE_LABEL}"
     await callback.answer(f"{label} поставлена!")
     await show_match_at_index(callback, callback.from_user.id, callback_data.index)
+
+
+@router.callback_query(ReputationInfoCallback.filter())
+async def show_reputation_info(callback: CallbackQuery, callback_data: ReputationInfoCallback):
+    aura_count, vibe_count = await get_reputation_counts(callback_data.to_user_id)
+    count = aura_count if callback_data.kind == "aura" else vibe_count
+    if count <= 0:
+        await callback.answer("Пока нет таких оценок.", show_alert=True)
+        return
+
+    text = format_reputation_info(
+        callback_data.kind,
+        count,
+        is_self=callback.from_user.id == callback_data.to_user_id,
+    )
+    await callback.answer(text, show_alert=True)
 
 
 @router.callback_query(F.data == "matches_counter")

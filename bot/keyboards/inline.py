@@ -43,6 +43,10 @@ class MatchRateCallback(CallbackData, prefix="mrate"):
     partner_id: int
     index: int
 
+class ReputationInfoCallback(CallbackData, prefix="rep_info"):
+    kind: str  # "aura" или "vibe"
+    to_user_id: int
+
 # Для подачи жалобы
 class ReportCallback(CallbackData, prefix="rep"):
     to_user_id: int
@@ -147,17 +151,26 @@ def get_skip_keyboard(step: str) -> InlineKeyboardMarkup:
 
 # ================= 3. КЛАВИАТУРЫ ПРОФИЛЯ И РЕДАКТИРОВАНИЯ =================
 
-def get_profile_menu_keyboard(is_active: bool, is_banned: bool = False) -> InlineKeyboardMarkup:
+def get_profile_menu_keyboard(
+    is_active: bool,
+    is_banned: bool = False,
+    aura_count: int = 0,
+    vibe_count: int = 0,
+    user_id: int | None = None,
+) -> InlineKeyboardMarkup:
     if is_banned:
         return get_banned_profile_menu_keyboard()
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ Редактировать анкету", callback_data="menu_edit_profile")
-    builder.button(text="⚙️ Фильтры поиска", callback_data="menu_edit_settings")
+    if user_id is not None:
+        reputation_buttons = _reputation_info_buttons(user_id, aura_count, vibe_count)
+        if reputation_buttons:
+            builder.row(*reputation_buttons)
+    builder.row(InlineKeyboardButton(text="✏️ Редактировать анкету", callback_data="menu_edit_profile"))
+    builder.row(InlineKeyboardButton(text="⚙️ Фильтры поиска", callback_data="menu_edit_settings"))
     status_text = "⏸ Скрыть анкету" if is_active else "▶️ Показать в поиске"
-    builder.button(text=status_text, callback_data="profile_toggle_status")
-    builder.button(text="🗑 Удалить анкету", callback_data="profile_delete")
-    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text=status_text, callback_data="profile_toggle_status"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить анкету", callback_data="profile_delete"))
     return builder.as_markup()
 
 
@@ -228,12 +241,38 @@ REPORT_REASON_LABELS = {
 }
 
 
+def _reputation_info_buttons(user_id: int, aura_count: int, vibe_count: int) -> list[InlineKeyboardButton]:
+    from bot.utils.reputation import AURA_EMOJI, VIBE_EMOJI
+
+    buttons = []
+    if aura_count > 0:
+        buttons.append(
+            InlineKeyboardButton(
+                text=f"{AURA_EMOJI} {aura_count}",
+                callback_data=ReputationInfoCallback(kind="aura", to_user_id=user_id).pack(),
+            )
+        )
+    if vibe_count > 0:
+        buttons.append(
+            InlineKeyboardButton(
+                text=f"{VIBE_EMOJI} {vibe_count}",
+                callback_data=ReputationInfoCallback(kind="vibe", to_user_id=user_id).pack(),
+            )
+        )
+    return buttons
+
+
 def get_swipe_keyboard(
     to_user_id: int,
     can_undo: bool = False,
     like_messages_remaining: int = 5,
+    aura_count: int = 0,
+    vibe_count: int = 0,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    reputation_buttons = _reputation_info_buttons(to_user_id, aura_count, vibe_count)
+    if reputation_buttons:
+        builder.row(*reputation_buttons)
     builder.row(
         InlineKeyboardButton(
             text="👎",
@@ -270,8 +309,17 @@ def get_like_message_cancel_keyboard(to_user_id: int) -> InlineKeyboardMarkup:
     )
     return builder.as_markup()
 
-def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKeyboardMarkup:
+def get_likeback_keyboard(
+    from_user_id: int,
+    index: int,
+    total: int,
+    aura_count: int = 0,
+    vibe_count: int = 0,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    reputation_buttons = _reputation_info_buttons(from_user_id, aura_count, vibe_count)
+    if reputation_buttons:
+        builder.row(*reputation_buttons)
     if total > 1:
         nav_buttons = []
         if index > 0:
@@ -311,10 +359,17 @@ def get_match_keyboard(
     partner_id: int,
     has_aura: bool = False,
     has_vibe: bool = False,
+    aura_count: int = 0,
+    vibe_count: int = 0,
 ) -> InlineKeyboardMarkup:
+    from bot.utils.reputation import AURA_EMOJI, VIBE_EMOJI, AURA_LABEL, VIBE_LABEL
+
     builder = InlineKeyboardBuilder()
-    aura_text = "✅ ✨ Aura" if has_aura else "✨ Aura"
-    vibe_text = "✅ 💬 Vibe" if has_vibe else "💬 Vibe"
+    reputation_buttons = _reputation_info_buttons(partner_id, aura_count, vibe_count)
+    if reputation_buttons:
+        builder.row(*reputation_buttons)
+    aura_text = f"✅ {AURA_EMOJI} {AURA_LABEL}" if has_aura else f"{AURA_EMOJI} {AURA_LABEL}"
+    vibe_text = f"✅ {VIBE_EMOJI} {VIBE_LABEL}" if has_vibe else f"{VIBE_EMOJI} {VIBE_LABEL}"
     builder.row(
         InlineKeyboardButton(
             text=aura_text,
@@ -330,16 +385,19 @@ def get_match_keyboard(
         ),
     )
     if total > 1:
-        nav_count = 0
+        nav_buttons = []
         if index > 0:
-            builder.button(text="⬅️", callback_data=MatchNavCallback(index=index - 1).pack())
-            nav_count += 1
-        builder.button(text=f"{index + 1}/{total}", callback_data="matches_counter")
-        nav_count += 1
+            nav_buttons.append(
+                InlineKeyboardButton(text="⬅️", callback_data=MatchNavCallback(index=index - 1).pack())
+            )
+        nav_buttons.append(
+            InlineKeyboardButton(text=f"{index + 1}/{total}", callback_data="matches_counter")
+        )
         if index < total - 1:
-            builder.button(text="➡️", callback_data=MatchNavCallback(index=index + 1).pack())
-            nav_count += 1
-        builder.adjust(2, nav_count)
+            nav_buttons.append(
+                InlineKeyboardButton(text="➡️", callback_data=MatchNavCallback(index=index + 1).pack())
+            )
+        builder.row(*nav_buttons)
     return builder.as_markup()
 
 
