@@ -101,6 +101,12 @@ def get_start_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📝 Заполнить анкету", callback_data="start_registration")
     return builder.as_markup()
 
+
+def get_start_browse_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Искать тиммейтов", callback_data="start_browse")
+    return builder.as_markup()
+
 def get_positions_keyboard(selected_positions: list[int]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     positions = {1: "Керри", 2: "Мидер", 3: "Тройка", 4: "Саппорт"}

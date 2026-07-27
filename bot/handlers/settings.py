@@ -3,9 +3,13 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from bot.states.fsm import SearchSettingsForm
-from bot.keyboards.inline import get_search_positions_keyboard, SearchPositionCallback, get_skip_keyboard
+from bot.keyboards.inline import (
+    get_search_positions_keyboard,
+    SearchPositionCallback,
+    get_skip_keyboard,
+    get_start_browse_keyboard,
+)
 from bot.database.requests import save_user_and_settings
-from bot.keyboards.reply import REMOVE_KEYBOARD
 
 router = Router()
 
@@ -132,8 +136,8 @@ async def finish_registration(user, message_obj: Message, state: FSMContext):
 
     await message_obj.answer(
         "✅ Все настройки успешно сохранены!\n\n"
-        "Теперь ты можешь искать тимейтов — отправь /browse.",
-        reply_markup=REMOVE_KEYBOARD,
+        "Теперь ты можешь искать тимейтов.",
+        reply_markup=get_start_browse_keyboard(),
     )
     from bot.middleware.keyboard import mark_keyboard_cleared
     mark_keyboard_cleared(user.id)

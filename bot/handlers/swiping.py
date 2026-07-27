@@ -229,10 +229,23 @@ async def start_swiping(message: Message, state: FSMContext):
     if await reject_banned_message(message):
         return
 
+    await _start_swiping_flow(message, message.from_user.id, state)
+
+
+@router.callback_query(F.data == "start_browse")
+async def start_swiping_from_button(callback: CallbackQuery, state: FSMContext):
+    if await reject_banned_callback(callback):
+        return
+
+    await _start_swiping_flow(callback.message, callback.from_user.id, state)
+    await callback.answer()
+
+
+async def _start_swiping_flow(message: Message, user_id: int, state: FSMContext):
     await state.clear()
 
     # Сначала проверяем, есть ли у самого юзера анкета
-    user = await get_user_with_settings(message.from_user.id)
+    user = await get_user_with_settings(user_id)
     if not user:
         await message.answer("Сначала заполни свою анкету!")
         return
@@ -241,7 +254,7 @@ async def start_swiping(message: Message, state: FSMContext):
         await message.answer(HIDDEN_PROFILE_MSG, reply_markup=REMOVE_KEYBOARD)
         return
 
-    await show_next_profile(message, message.from_user.id, state=state)
+    await show_next_profile(message, user_id, state=state)
 
 
 # ================= ОБРАБОТКА ЛАЙКА / ДИЗЛАЙКА =================
