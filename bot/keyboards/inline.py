@@ -38,6 +38,11 @@ class LikeNavCallback(CallbackData, prefix="ln"):
 class MatchNavCallback(CallbackData, prefix="mt"):
     index: int
 
+class MatchRateCallback(CallbackData, prefix="mrate"):
+    action: str  # "aura" или "vibe"
+    partner_id: int
+    index: int
+
 # Для подачи жалобы
 class ReportCallback(CallbackData, prefix="rep"):
     to_user_id: int
@@ -300,8 +305,30 @@ def get_likeback_keyboard(from_user_id: int, index: int, total: int) -> InlineKe
     return builder.as_markup()
 
 
-def get_match_keyboard(index: int, total: int) -> InlineKeyboardMarkup:
+def get_match_keyboard(
+    index: int,
+    total: int,
+    partner_id: int,
+    has_aura: bool = False,
+    has_vibe: bool = False,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    aura_text = "✅ ✨ Aura" if has_aura else "✨ Aura"
+    vibe_text = "✅ 💬 Vibe" if has_vibe else "💬 Vibe"
+    builder.row(
+        InlineKeyboardButton(
+            text=aura_text,
+            callback_data=MatchRateCallback(
+                action="aura", partner_id=partner_id, index=index,
+            ).pack(),
+        ),
+        InlineKeyboardButton(
+            text=vibe_text,
+            callback_data=MatchRateCallback(
+                action="vibe", partner_id=partner_id, index=index,
+            ).pack(),
+        ),
+    )
     if total > 1:
         nav_count = 0
         if index > 0:
@@ -312,7 +339,7 @@ def get_match_keyboard(index: int, total: int) -> InlineKeyboardMarkup:
         if index < total - 1:
             builder.button(text="➡️", callback_data=MatchNavCallback(index=index + 1).pack())
             nav_count += 1
-        builder.adjust(nav_count)
+        builder.adjust(2, nav_count)
     return builder.as_markup()
 
 

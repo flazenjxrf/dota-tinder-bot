@@ -30,6 +30,7 @@ from bot.keyboards.inline import (
 from bot.handlers.start import CONSENT_TEXT
 from bot.utils.bot_commands import CMD_PROFILE
 from bot.utils.city import format_city_display
+from bot.utils.reputation import format_reputation_line
 
 router = Router()
 
@@ -43,7 +44,7 @@ positions_mapping = {
 
 # ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================
 
-def make_profile_caption(user, ban_reason: str | None = None) -> str:
+def make_profile_caption(user, ban_reason: str | None = None, reputation: str = "") -> str:
     """Генерирует красивый текст карточки профиля"""
     pos_names = [positions_mapping[p] for p in sorted(user.positions)]
     pos_str = ", ".join(pos_names)
@@ -58,13 +59,18 @@ def make_profile_caption(user, ban_reason: str | None = None) -> str:
         f"👤 <b>Твой профиль:</b>\n\n"
         f"🌟 <b>{user.name}</b>, {user.age} | {format_city_display(user)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {user.mmr}\n\n"
-        f"💬 О себе:\n{user.bio}\n\n"
+        f"🏆 MMR: {user.mmr}{reputation}\n\n"
+        f"💬 О себе: {user.bio}\n\n"
         f"📢 Статус анкеты: {status_emoji}\n"
     )
     if ban_reason:
         caption += f"\n📋 <b>Причина блокировки:</b>\n<i>{ban_reason}</i>\n"
     return caption
+
+
+async def _profile_caption_for(user, telegram_id: int, ban_reason: str | None = None) -> str:
+    reputation = await format_reputation_line(telegram_id)
+    return make_profile_caption(user, ban_reason, reputation)
 
 
 async def _get_profile_keyboard(telegram_id: int, user) -> InlineKeyboardMarkup:
@@ -84,7 +90,7 @@ async def send_my_profile_message(message: Message, telegram_id: int):
 
     ban = await get_current_ban(telegram_id)
     ban_reason = ban.reason if ban else None
-    caption = make_profile_caption(user, ban_reason)
+    caption = await _profile_caption_for(user, telegram_id, ban_reason)
     keyboard = await _get_profile_keyboard(telegram_id, user)
 
     await message.answer_photo(
@@ -129,7 +135,7 @@ async def back_to_profile_callback(callback: CallbackQuery, state: FSMContext):
     user = await get_user_with_settings(callback.from_user.id)
     ban = await get_current_ban(callback.from_user.id)
     ban_reason = ban.reason if ban else None
-    caption = make_profile_caption(user, ban_reason)
+    caption = await _profile_caption_for(user, callback.from_user.id, ban_reason)
     keyboard = await _get_profile_keyboard(callback.from_user.id, user)
 
     # Проверяем, есть ли фото в сообщении, с которого пришел клик
@@ -164,7 +170,7 @@ async def toggle_profile_status(callback: CallbackQuery):
     user.status = new_status
     is_active = (new_status == ProfileStatus.ACTIVE)
     await callback.message.edit_caption(
-        caption=make_profile_caption(user),
+        caption=await _profile_caption_for(user, callback.from_user.id),
         reply_markup=get_profile_menu_keyboard(is_active)
     )
     await callback.answer(f"Статус изменен на {'Показывается' if is_active else 'Скрыт'}!")
@@ -202,7 +208,7 @@ async def profile_delete_cancel(callback: CallbackQuery, state: FSMContext):
 
     is_active = user.status == ProfileStatus.ACTIVE
     await callback.message.edit_caption(
-        caption=make_profile_caption(user),
+        caption=await _profile_caption_for(user, callback.from_user.id),
         reply_markup=get_profile_menu_keyboard(is_active),
     )
     await callback.answer()
@@ -421,7 +427,7 @@ async def confirm_edit_positions(callback: CallbackQuery, state: FSMContext):
     user = await get_user_with_settings(callback.from_user.id)
     ban = await get_current_ban(callback.from_user.id)
     ban_reason = ban.reason if ban else None
-    caption = make_profile_caption(user, ban_reason)
+    caption = await _profile_caption_for(user, callback.from_user.id, ban_reason)
     keyboard = await _get_profile_keyboard(callback.from_user.id, user)
 
     await callback.message.edit_caption(

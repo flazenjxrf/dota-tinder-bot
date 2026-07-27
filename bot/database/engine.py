@@ -110,6 +110,22 @@ async def init_models():
             EXCEPTION WHEN others THEN NULL;
             END $$;
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS teammate_ratings (
+                id BIGSERIAL PRIMARY KEY,
+                from_user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+                to_user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+                has_aura BOOLEAN NOT NULL DEFAULT FALSE,
+                has_vibe BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                updated_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                CONSTRAINT uq_teammate_rating_from_to UNIQUE (from_user_id, to_user_id)
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_teammate_ratings_to_user_id "
+            "ON teammate_ratings (to_user_id)"
+        ))
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()

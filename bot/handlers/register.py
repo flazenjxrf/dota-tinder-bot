@@ -131,7 +131,7 @@ async def process_photo(message: Message, state: FSMContext):
         f"🌟 <b>{data['name']}</b>, {data['age']} | 📍 {data['city']}\n\n"
         f"🎯 Позиции: {pos_str}\n"
         f"🏆 MMR: {data['mmr']}\n\n"
-        f"💬 О себе:\n{data['bio']}\n\n"
+        f"💬 : {data['bio']}\n\n"
         f"<i>Вот так тебя смогут увидеть другие пользователи. Всё верно?</i>"
     )
 

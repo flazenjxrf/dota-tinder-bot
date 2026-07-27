@@ -28,7 +28,7 @@ def format_match_profile_caption(user: User) -> str:
         f"🌟 <b>{user.name}</b>, {user.age} | 📍 {user.city}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {user.mmr}\n\n"
-        f"💬 О себе:\n{user.bio}"
+        f"💬 О себе: {user.bio}"
     )
 
 

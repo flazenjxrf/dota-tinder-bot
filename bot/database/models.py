@@ -182,3 +182,19 @@ class ProfileDeletion(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     deleted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class TeammateRating(Base):
+    """Оценка мэтча: aura (скилл) и/или vibe (приятно общаться). Один пользователь — одна запись на мэтч."""
+    __tablename__ = "teammate_ratings"
+    __table_args__ = (
+        UniqueConstraint("from_user_id", "to_user_id", name="uq_teammate_rating_from_to"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    from_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    to_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    has_aura: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_vibe: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)

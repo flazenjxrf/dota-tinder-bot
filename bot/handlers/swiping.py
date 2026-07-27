@@ -29,6 +29,7 @@ from bot.utils.bot_commands import CMD_BROWSE
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
 from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
+from bot.utils.reputation import format_reputation_line
 from bot.states.fsm import SwipingForm
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
@@ -85,15 +86,15 @@ def _crossed_like_notify_threshold(old_count: int, new_count: int) -> int | None
     return None
 
 
-def build_browse_caption(profile: User) -> str:
+def build_browse_caption(profile: User, reputation: str = "") -> str:
     pos_names = [positions_mapping[p] for p in sorted(profile.positions)]
     pos_str = ", ".join(pos_names)
     return (
         f"🎮 <b>Напарник найден:</b>\n\n"
         f"🌟 <b>{profile.name}</b>, {profile.age} | {format_city_display(profile)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {profile.mmr}\n\n"
-        f"💬 О себе:\n{profile.bio}"
+        f"🏆 MMR: {profile.mmr}{reputation}\n\n"
+        f"💬 О себе: {profile.bio}"
     )
 
 
@@ -186,10 +187,11 @@ async def show_browse_profile(
     if viewer:
         remaining = await get_like_messages_remaining_today(viewer.telegram_id)
 
+    reputation = await format_reputation_line(profile.telegram_id)
     await send_profile_card(
         message_or_callback,
         profile.photo_file_id,
-        build_browse_caption(profile),
+        build_browse_caption(profile, reputation),
         get_swipe_keyboard(
             profile.telegram_id,
             can_undo=can_undo,

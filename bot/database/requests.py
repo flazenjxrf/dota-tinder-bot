@@ -210,6 +210,7 @@ from sqlalchemy import select, and_, not_, exists, func
 from bot.database.models import (
     SearchSettings, Swipe, ActionType, Report, ReportReason, ReportStatus,
     BugFeedback, FeedbackStatus, BannedUser, BanHistory, UnbanRequest, UnbanRequestStatus,
+    TeammateRating,
 )
 from datetime import datetime
 
@@ -513,6 +514,93 @@ async def get_match_at_index(user_id: int, index: int) -> tuple[User | None, int
         stmt = select(User).where(User.telegram_id == partner_ids[index])
         user = (await session.execute(stmt)).scalar_one_or_none()
         return user, total
+
+
+async def are_users_matched(user_a: int, user_b: int) -> bool:
+    """Проверяет, есть ли взаимный лайк между пользователями."""
+    partner_ids = await get_match_partner_ids(user_a)
+    return user_b in partner_ids
+
+
+async def get_teammate_rating(from_user_id: int, to_user_id: int) -> tuple[bool, bool]:
+    """Возвращает (has_aura, has_vibe), поставленные from_user_id для to_user_id."""
+    async with session_maker() as session:
+        stmt = select(TeammateRating).where(
+            TeammateRating.from_user_id == from_user_id,
+            TeammateRating.to_user_id == to_user_id,
+        )
+        rating = (await session.execute(stmt)).scalar_one_or_none()
+        if not rating:
+            return False, False
+        return rating.has_aura, rating.has_vibe
+
+
+async def get_reputation_counts(user_id: int) -> tuple[int, int]:
+    """Возвращает (aura_count, vibe_count) — сколько раз пользователя оценили."""
+    async with session_maker() as session:
+        aura_stmt = select(func.count()).select_from(TeammateRating).where(
+            TeammateRating.to_user_id == user_id,
+            TeammateRating.has_aura.is_(True),
+        )
+        vibe_stmt = select(func.count()).select_from(TeammateRating).where(
+            TeammateRating.to_user_id == user_id,
+            TeammateRating.has_vibe.is_(True),
+        )
+        aura_count = (await session.execute(aura_stmt)).scalar_one()
+        vibe_count = (await session.execute(vibe_stmt)).scalar_one()
+        return aura_count, vibe_count
+
+
+async def add_teammate_rating(
+    from_user_id: int,
+    to_user_id: int,
+    *,
+    aura: bool = False,
+    vibe: bool = False,
+) -> str | None:
+    """
+    Добавляет aura и/или vibe от мэтча. Можно дополнить вторую оценку позже.
+    Возвращает None при успехе или текст ошибки.
+    """
+    if from_user_id == to_user_id:
+        return "Нельзя оценить самого себя."
+
+    if not await are_users_matched(from_user_id, to_user_id):
+        return "Оценить можно только мэтчей."
+
+    if not aura and not vibe:
+        return "Нужно выбрать хотя бы одну оценку."
+
+    async with session_maker() as session:
+        stmt = select(TeammateRating).where(
+            TeammateRating.from_user_id == from_user_id,
+            TeammateRating.to_user_id == to_user_id,
+        )
+        rating = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not rating:
+            rating = TeammateRating(
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                has_aura=aura,
+                has_vibe=vibe,
+            )
+            session.add(rating)
+            await session.commit()
+            return None
+
+        if aura:
+            if rating.has_aura:
+                return "Ты уже поставил ✨ Aura этому игроку."
+            rating.has_aura = True
+        if vibe:
+            if rating.has_vibe:
+                return "Ты уже поставил 💬 Vibe этому игроку."
+            rating.has_vibe = True
+
+        rating.updated_at = datetime.utcnow()
+        await session.commit()
+        return None
 
 
 # ================= Админ-панель и баны =================
