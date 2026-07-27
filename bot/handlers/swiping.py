@@ -198,8 +198,6 @@ async def show_browse_profile(
             profile.telegram_id,
             can_undo=can_undo,
             like_messages_remaining=remaining,
-            aura_count=aura_count,
-            vibe_count=vibe_count,
         ),
     )
 

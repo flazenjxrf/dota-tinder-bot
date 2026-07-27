@@ -65,13 +65,7 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
         message_or_callback,
         next_user.photo_file_id,
         caption,
-        get_likeback_keyboard(
-            next_user.telegram_id,
-            actual_index,
-            total,
-            aura_count=aura_count,
-            vibe_count=vibe_count,
-        ),
+        get_likeback_keyboard(next_user.telegram_id, actual_index, total),
     )
 
 

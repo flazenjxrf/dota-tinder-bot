@@ -80,13 +80,7 @@ async def _get_profile_keyboard(telegram_id: int, user) -> InlineKeyboardMarkup:
     if is_banned:
         has_pending = await has_pending_unban_request(telegram_id)
         return get_banned_profile_menu_keyboard(has_pending)
-    aura_count, vibe_count = await get_reputation_counts(telegram_id)
-    return get_profile_menu_keyboard(
-        user.status == ProfileStatus.ACTIVE,
-        aura_count=aura_count,
-        vibe_count=vibe_count,
-        user_id=telegram_id,
-    )
+    return get_profile_menu_keyboard(user.status == ProfileStatus.ACTIVE)
 
 
 async def send_my_profile_message(message: Message, telegram_id: int):
