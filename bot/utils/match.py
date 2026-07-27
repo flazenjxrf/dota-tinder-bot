@@ -1,6 +1,7 @@
 from aiogram import Bot
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
+from html import escape
 
 from bot.database.models import User
 
@@ -13,9 +14,10 @@ POSITIONS_MAPPING = {
 
 
 def get_user_link(user_id: int, name: str, username: str | None) -> str:
+    safe_name = escape(name)
     if username:
-        return f"@{username}"
-    return f'<a href="tg://user?id={user_id}">{name}</a>'
+        return f'<a href="https://t.me/{username}">{safe_name}</a>'
+    return f'<a href="tg://user?id={user_id}">{safe_name}</a>'
 
 
 def format_match_profile_caption(user: User) -> str:

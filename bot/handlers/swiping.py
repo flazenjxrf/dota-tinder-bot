@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from html import escape
+from contextlib import suppress
 
 from bot.database.requests import (
     get_next_profile,
@@ -204,7 +205,10 @@ async def show_next_profile(message_or_callback, user_id: int, state: FSMContext
     if not next_user:
         text = "🎯 <b>Подходящие анкеты закончились!</b>\n\nПопробуй расширить фильтры поиска в меню 👤 Моя анкета -> Фильтры поиска."
         if isinstance(message_or_callback, CallbackQuery):
-            await message_or_callback.message.delete()
+            # Старое сообщение может быть уже недоступно для удаления (например, при повторном тапе).
+            # В таком случае все равно отправляем уведомление о конце свайпов.
+            with suppress(Exception):
+                await message_or_callback.message.delete()
             await message_or_callback.message.answer(text, reply_markup=REMOVE_KEYBOARD)
         else:
             await message_or_callback.answer(text, reply_markup=REMOVE_KEYBOARD)
