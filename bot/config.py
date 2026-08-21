@@ -54,6 +54,27 @@ def _build_database_url() -> str:
 DATABASE_URL = _build_database_url()
 
 
+def _resolve_webapp_url() -> str:
+    """HTTPS URL Mini App: WEBAPP_URL или публичный домен Railway."""
+    explicit = (os.getenv("WEBAPP_URL") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+
+    domain = (
+        os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("RAILWAY_STATIC_URL")
+        or ""
+    ).strip()
+    if not domain:
+        return ""
+
+    domain = domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+    return f"https://{domain}" if domain else ""
+
+
+WEBAPP_URL = _resolve_webapp_url()
+
+
 def _parse_admin_ids() -> frozenset[int]:
     raw = os.getenv("ADMIN_IDS", "")
     if not raw.strip():

@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import get_user_with_settings, has_user_consented, record_user_consent
 from bot.database.models import ProfileStatus
-from bot.keyboards.inline import get_consent_keyboard, get_start_keyboard
+from bot.keyboards.inline import get_consent_keyboard, get_start_keyboard, get_webapp_keyboard
 from bot.keyboards.reply import hide_reply_keyboard, REMOVE_KEYBOARD
 from bot.middleware.consent import CONSENT_GATE_SHOWN, EXISTING_USER_CONSENT_TEXT
 from bot.services.consent_resume import resume_pending_menu_action
@@ -58,6 +58,9 @@ async def cmd_start(message: Message):
             RETURNING_USER_TEXT,
             reply_markup=REMOVE_KEYBOARD,
         )
+        webapp_kb = get_webapp_keyboard()
+        if webapp_kb:
+            await message.answer("Можешь пользоваться ботом в чате или открыть Mini App 👇", reply_markup=webapp_kb)
         from bot.middleware.keyboard import mark_keyboard_cleared
         mark_keyboard_cleared(message.from_user.id)
         return

@@ -4,5 +4,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "python -m bot"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10

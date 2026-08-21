@@ -1,6 +1,8 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters.callback_data import CallbackData
+
+from bot.config import WEBAPP_URL
 
 # ================= 1. ФАБРИКИ КОЛЛБЕКОВ =================
 
@@ -104,12 +106,26 @@ def get_consent_keyboard() -> InlineKeyboardMarkup:
 def get_start_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Заполнить анкету", callback_data="start_registration")
+    if WEBAPP_URL:
+        builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))
+        builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_webapp_keyboard() -> InlineKeyboardMarkup | None:
+    if not WEBAPP_URL:
+        return None
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📱 Открыть FeedEther", web_app=WebAppInfo(url=WEBAPP_URL))
     return builder.as_markup()
 
 
 def get_start_browse_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if WEBAPP_URL:
+        builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))
     builder.button(text="🔍 Искать тиммейтов", callback_data="start_browse")
+    builder.adjust(1)
     return builder.as_markup()
 
 def get_positions_keyboard(selected_positions: list[int]) -> InlineKeyboardMarkup:

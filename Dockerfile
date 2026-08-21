@@ -1,14 +1,13 @@
 FROM python:3.11-slim
 
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем зависимости и устанавливаем их
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь код бота
 COPY bot /app/bot
 
-# Запускаем бота
+EXPOSE 8080
+
+# Бот + Mini App в одном процессе (Railway: PORT)
 CMD ["python", "-m", "bot"]

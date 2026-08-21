@@ -1,16 +1,23 @@
-# 🎮 Dota Tinder Bot
+# 🎮 FeedEther — Dota Tinder
 
-Телеграм-бот для поиска команды и друзей в Dota 2. Позволяет заполнять анкету, настраивать фильтры поиска по MMR и ролям, а также лайкать других игроков.
+Телеграм-бот + Mini App для поиска тиммейтов в Dota 2.
 
-### Стек:
-- **Python** (aiogram 3.x)
-- **PostgreSQL**
-- **SQLAlchemy 2.0** (Async)
-- **Docker & Docker Compose**
+### Стек
+- **Python** (aiogram 3 + FastAPI в одном процессе)
+- **PostgreSQL** + SQLAlchemy 2 async
+- **Docker** / **Railway**
 
-### Как запустить:
-1. Клонируйте репозиторий.
-2. Создайте файл `.env` на основе примера и впишите свой `BOT_TOKEN`.
-3. Запустите проект:
-   ```bash
-   docker-compose up -d --build
+### Railway (как у тебя сейчас)
+1. Пушь в git — билдится `Dockerfile`, старт: `python -m bot`.
+2. В сервисе должен быть **публичный HTTP** (Settings → Networking → Generate Domain).
+3. `WEBAPP_URL` можно не задавать: возьмётся `https://$RAILWAY_PUBLIC_DOMAIN`.
+4. В BotFather → Bot Settings → Domain укажи тот же домен (без `https://`).
+
+Один контейнер слушает `$PORT` (Mini App) и параллельно крутит polling бота. Команды в чате работают как раньше.
+
+### Локально
+```bash
+cp .env.example .env   # BOT_TOKEN
+docker compose up -d --build
+# Mini App: http://localhost:8080 (для Telegram нужен HTTPS-туннель)
+```

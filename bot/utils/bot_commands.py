@@ -1,5 +1,13 @@
 from aiogram import Bot
-from aiogram.types import BotCommand, BotCommandScopeDefault, MenuButtonCommands
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeDefault,
+    MenuButtonCommands,
+    MenuButtonWebApp,
+    WebAppInfo,
+)
+
+from bot.config import WEBAPP_URL
 
 CMD_BROWSE = "browse"
 CMD_PROFILE = "profile"
@@ -19,6 +27,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_RESTART, description="♻️ Перезапустить меню"),
 ]
 
+
 def normalize_command(text: str | None) -> str | None:
     if not text or not text.startswith("/"):
         return None
@@ -27,4 +36,12 @@ def normalize_command(text: str | None) -> str | None:
 
 async def setup_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands(BOT_COMMANDS, scope=BotCommandScopeDefault())
-    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    if WEBAPP_URL:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="FeedEther",
+                web_app=WebAppInfo(url=WEBAPP_URL),
+            )
+        )
+    else:
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
