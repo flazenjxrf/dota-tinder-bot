@@ -11,6 +11,7 @@ const state = {
   tab: "browse",
   browse: null,
   lastSwipedId: null,
+  lastSwipedProfile: null,
   likesIndex: 0,
   matchesIndex: 0,
   likes: null,
@@ -404,7 +405,14 @@ async function renderBrowse() {
           method: "POST",
           body: JSON.stringify({ to_user_id: profile.telegram_id, action, message }),
         });
-        state.lastSwipedId = profile.telegram_id;
+        // Как в боте: возврат только после дизлайка (лайк/мэтч — без undo)
+        if (action === "dislike") {
+          state.lastSwipedId = profile.telegram_id;
+          state.lastSwipedProfile = profile;
+        } else {
+          state.lastSwipedId = null;
+          state.lastSwipedProfile = null;
+        }
         state.browse = null;
         haptic(action === "like" ? "medium" : "light");
         if (res.is_match) {
@@ -422,15 +430,18 @@ async function renderBrowse() {
     root.querySelector("#like").onclick = () => doSwipe("like");
     root.querySelector("#dislike").onclick = () => doSwipe("dislike");
     root.querySelector("#undo").onclick = async () => {
-      if (!state.lastSwipedId) return;
+      if (!state.lastSwipedId || !state.lastSwipedProfile) return;
       try {
         await api("/api/swipe/undo", {
           method: "POST",
           body: JSON.stringify({ to_user_id: state.lastSwipedId }),
         });
+        // Возвращаем ту же анкету, а не случайную следующую
+        state.browse = { profile: state.lastSwipedProfile };
         state.lastSwipedId = null;
-        state.browse = null;
-        toast("Отменено");
+        state.lastSwipedProfile = null;
+        toast("Вернули анкету");
+        haptic("light");
         render();
       } catch (e) {
         toast(e.message);
