@@ -7,7 +7,6 @@ from bot.database.requests import get_user_with_settings, has_user_consented, re
 from bot.database.models import ProfileStatus
 from bot.keyboards.inline import (
     get_consent_keyboard,
-    get_start_keyboard,
     get_webapp_keyboard,
     get_miniapp_invite_keyboard,
 )
@@ -27,10 +26,6 @@ CONSENT_TEXT = (
     "другим игрокам для поиска тиммейтов\n\n"
     "Мой тгк: @flazenjxrf\n"
     "Мой ютуб: youtube.com/@flazenjxrf"
-)
-
-AFTER_CONSENT_TEXT = (
-    "Отлично! Теперь заполни анкету — так другие игроки смогут тебя найти 🎮"
 )
 
 MINIAPP_INVITE_TEXT = (
