@@ -1,9 +1,9 @@
 const tg = window.Telegram?.WebApp;
 const POSITIONS = [
-  { id: 1, label: "1 Керри" },
-  { id: 2, label: "2 Мидер" },
-  { id: 3, label: "3 Тройка" },
-  { id: 4, label: "4 Саппорт" },
+  { id: 1, label: "Керри" },
+  { id: 2, label: "Мидер" },
+  { id: 3, label: "Тройка" },
+  { id: 4, label: "Саппорт" },
 ];
 
 const state = {

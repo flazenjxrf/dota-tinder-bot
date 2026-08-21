@@ -206,28 +206,22 @@ button {
   color: var(--ink);
 }
 
-.btn-like {
-  background: var(--accent-dim);
-  border: 1px solid rgba(47, 111, 237, 0.28);
-  color: var(--accent);
-}
-
-.btn-dislike {
-  background: rgba(196, 91, 102, 0.08);
-  border: 1px solid rgba(196, 91, 102, 0.25);
-  color: var(--dislike);
-}
-
-.btn-msg {
-  background: rgba(47, 111, 237, 0.08);
-  border: 1px solid rgba(47, 111, 237, 0.22);
-  color: var(--accent);
-}
-
+.btn-like,
+.btn-dislike,
+.btn-msg,
 .btn-undo {
   background: #fff;
-  border: 1px solid var(--line);
-  color: var(--muted);
+  border: 1px solid rgba(47, 111, 237, 0.22);
+  color: #4a6fa8;
+}
+
+.btn-like:not(:disabled):active,
+.btn-dislike:not(:disabled):active,
+.btn-msg:not(:disabled):active,
+.btn-undo:not(:disabled):active {
+  background: var(--accent-dim);
+  border-color: rgba(47, 111, 237, 0.4);
+  color: var(--accent);
 }
 
 .btn .ico {
