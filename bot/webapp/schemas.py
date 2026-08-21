@@ -42,6 +42,7 @@ class ProfileUpdateBody(BaseModel):
     mmr: int | None = Field(default=None, ge=0, le=20000)
     positions: list[int] | None = None
     bio: str | None = Field(default=None, max_length=500)
+    photo_file_id: str | None = Field(default=None, min_length=1)
 
 
 class SettingsUpdateBody(BaseModel):

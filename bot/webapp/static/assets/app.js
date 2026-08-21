@@ -9,6 +9,7 @@ const POSITIONS = [
 const state = {
   me: null,
   tab: "browse",
+  profileView: "main", // main | edit | settings
   browse: null,
   lastSwipedId: null,
   lastSwipedProfile: null,
@@ -16,6 +17,8 @@ const state = {
   matchesIndex: 0,
   likes: null,
   matches: null,
+  edit: null,
+  settingsForm: null,
   register: {
     step: 0,
     name: "",
@@ -161,6 +164,12 @@ function bindNav(root) {
   root.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.tab = btn.dataset.tab;
+      if (state.tab === "profile") state.profileView = "main";
+      else {
+        state.profileView = "main";
+        state.edit = null;
+        state.settingsForm = null;
+      }
       render();
     });
   });
@@ -214,7 +223,7 @@ function bindPos(root, key, listRef) {
       const idx = listRef.indexOf(id);
       if (idx >= 0) listRef.splice(idx, 1);
       else listRef.push(id);
-      render();
+      btn.classList.toggle("on", listRef.includes(id));
     });
   });
 }
@@ -634,6 +643,9 @@ async function renderMatches() {
 }
 
 async function renderProfile() {
+  if (state.profileView === "edit") return renderEditProfile();
+  if (state.profileView === "settings") return renderSearchSettings();
+
   const root = document.getElementById("app");
   const p = state.me?.profile;
   if (!p) {
@@ -642,11 +654,30 @@ async function renderProfile() {
     return;
   }
   const hidden = p.status === "hidden";
+  const s = p.settings || {};
+  const wanted = (s.wanted_positions || [])
+    .map((id) => POSITIONS.find((x) => x.id === id)?.label)
+    .filter(Boolean)
+    .join(", ");
+  const filters = [
+    wanted ? `Роли: ${wanted}` : "Роли: любые",
+    s.min_age || s.max_age ? `Возраст: ${s.min_age ?? "—"}–${s.max_age ?? "—"}` : null,
+    s.min_mmr || s.max_mmr ? `MMR: ${s.min_mmr ?? "—"}–${s.max_mmr ?? "—"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   root.innerHTML = shell(
     "Профиль",
     `
     ${profileCard(p)}
+    <div class="panel" style="margin-top:12px">
+      <h2>Поиск</h2>
+      <p class="muted" style="margin:0">${escapeHtml(filters || "Фильтры не заданы")}</p>
+    </div>
     <div class="stack" style="margin-top:14px">
+      <button class="btn btn-primary btn-block" id="edit">Редактировать анкету</button>
+      <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
       <button class="btn btn-ghost btn-block" id="toggle">${hidden ? "Показать анкету" : "Скрыть анкету"}</button>
       <button class="btn btn-ghost btn-block" id="rules">Правила</button>
       <button class="btn btn-ghost btn-block" id="feedback">Сообщить о баге</button>
@@ -654,6 +685,33 @@ async function renderProfile() {
     </div>`
   );
   bindNav(root);
+  root.querySelector("#edit").onclick = () => {
+    const profile = state.me.profile;
+    state.edit = {
+      name: profile.name || "",
+      age: String(profile.age ?? ""),
+      city: profile.city || "",
+      mmr: String(profile.mmr ?? ""),
+      positions: [...(profile.positions || [])],
+      bio: profile.bio || "",
+      photo_file_id: profile.photo_file_id || "",
+      photo_preview: profile.photo_url || "",
+    };
+    state.profileView = "edit";
+    render();
+  };
+  root.querySelector("#settings").onclick = () => {
+    const s = state.me.profile.settings || {};
+    state.settingsForm = {
+      wanted_positions: [...(s.wanted_positions || [])],
+      min_age: s.min_age ?? "",
+      max_age: s.max_age ?? "",
+      min_mmr: s.min_mmr ?? "",
+      max_mmr: s.max_mmr ?? "",
+    };
+    state.profileView = "settings";
+    render();
+  };
   root.querySelector("#toggle").onclick = async () => {
     try {
       await api("/api/profile/status", {
@@ -690,10 +748,199 @@ async function renderProfile() {
     try {
       await api("/api/profile", { method: "DELETE" });
       await refreshMe();
+      state.profileView = "main";
       toast("Анкета удалена");
       render();
     } catch (e) {
       toast(e.message);
+    }
+  };
+}
+
+function renderEditProfile() {
+  const root = document.getElementById("app");
+  const e = state.edit;
+  if (!e) {
+    state.profileView = "main";
+    return renderProfile();
+  }
+
+  root.innerHTML = shell(
+    "Редактирование",
+    `
+    <div class="panel stack">
+      <div class="row">
+        <button class="btn btn-ghost" id="back">← Назад</button>
+      </div>
+      <h2>Анкета</h2>
+      <div class="field"><label>Имя</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
+      <div class="field"><label>Возраст</label><input id="age" type="number" min="14" max="99" value="${escapeHtml(e.age)}" /></div>
+      <div class="field"><label>Город</label><input id="city" maxlength="50" value="${escapeHtml(e.city)}" /></div>
+      <div class="field"><label>MMR</label><input id="mmr" type="number" min="0" max="20000" value="${escapeHtml(e.mmr)}" /></div>
+      <div class="field"><label>Роли</label>${posButtons(e.positions, "edit-pos")}</div>
+      <div class="field"><label>О себе</label><textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea></div>
+      <div class="field">
+        <label>Фото</label>
+        ${
+          e.photo_preview
+            ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(e.photo_preview)}" alt="" /></div>`
+            : `<p class="muted">Нет фото</p>`
+        }
+        <label class="btn btn-ghost btn-block file-btn" style="margin-top:8px">Сменить фото<input type="file" id="photo" accept="image/*" /></label>
+      </div>
+      <button class="btn btn-primary btn-block" id="save">Сохранить</button>
+    </div>`
+  );
+  bindNav(root);
+  bindPos(root, "edit-pos", e.positions);
+
+  root.querySelector("#back").onclick = () => {
+    state.profileView = "main";
+    state.edit = null;
+    render();
+  };
+
+  root.querySelector("#photo").onchange = async () => {
+    const file = root.querySelector("#photo").files?.[0];
+    if (!file) return;
+    try {
+      toast("Загрузка фото…");
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api("/api/photos/upload", { method: "POST", body: fd });
+      e.photo_file_id = res.photo_file_id;
+      e.photo_preview = res.photo_url || URL.createObjectURL(file);
+      toast("Фото загружено");
+      render();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  root.querySelector("#save").onclick = async () => {
+    try {
+      e.name = root.querySelector("#name").value.trim();
+      e.age = root.querySelector("#age").value;
+      e.city = root.querySelector("#city").value.trim();
+      e.mmr = root.querySelector("#mmr").value;
+      e.bio = root.querySelector("#bio").value.trim();
+
+      if (!e.name) throw new Error("Введи имя");
+      const age = Number(e.age);
+      if (!age || age < 14 || age > 99) throw new Error("Возраст 14–99");
+      if (!e.city) throw new Error("Укажи город");
+      const mmr = Number(e.mmr);
+      if (Number.isNaN(mmr) || mmr < 0) throw new Error("Некорректный MMR");
+      if (!e.positions.length) throw new Error("Выбери хотя бы одну роль");
+      if (!e.photo_file_id) throw new Error("Нужно фото");
+
+      await api("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: e.name,
+          age,
+          city: e.city,
+          mmr,
+          positions: e.positions,
+          bio: e.bio,
+          photo_file_id: e.photo_file_id,
+        }),
+      });
+      await refreshMe();
+      state.profileView = "main";
+      state.edit = null;
+      toast("Анкета обновлена");
+      haptic("medium");
+      render();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+}
+
+function renderSearchSettings() {
+  const root = document.getElementById("app");
+  const f = state.settingsForm;
+  if (!f) {
+    state.profileView = "main";
+    return renderProfile();
+  }
+
+  root.innerHTML = shell(
+    "Поиск",
+    `
+    <div class="panel stack">
+      <div class="row">
+        <button class="btn btn-ghost" id="back">← Назад</button>
+      </div>
+      <h2>Настройки поиска</h2>
+      <p class="muted" style="margin:0">Пустые поля = без ограничения</p>
+      <div class="field"><label>Ищем роли</label>${posButtons(f.wanted_positions, "want-pos")}</div>
+      <div class="row">
+        <div class="field"><label>Мин. возраст</label><input id="min_age" type="number" min="14" max="99" value="${escapeHtml(f.min_age)}" placeholder="—" /></div>
+        <div class="field"><label>Макс. возраст</label><input id="max_age" type="number" min="14" max="99" value="${escapeHtml(f.max_age)}" placeholder="—" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Мин. MMR</label><input id="min_mmr" type="number" min="0" max="20000" value="${escapeHtml(f.min_mmr)}" placeholder="—" /></div>
+        <div class="field"><label>Макс. MMR</label><input id="max_mmr" type="number" min="0" max="20000" value="${escapeHtml(f.max_mmr)}" placeholder="—" /></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="save">Сохранить</button>
+    </div>`
+  );
+  bindNav(root);
+  bindPos(root, "want-pos", f.wanted_positions);
+
+  root.querySelector("#back").onclick = () => {
+    state.profileView = "main";
+    state.settingsForm = null;
+    render();
+  };
+
+  root.querySelector("#save").onclick = async () => {
+    try {
+      const minAgeRaw = root.querySelector("#min_age").value.trim();
+      const maxAgeRaw = root.querySelector("#max_age").value.trim();
+      const minMmrRaw = root.querySelector("#min_mmr").value.trim();
+      const maxMmrRaw = root.querySelector("#max_mmr").value.trim();
+
+      const optionalInt = (raw, label, min, max) => {
+        if (!raw) return null;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${label}: ${min}–${max}`);
+        return n;
+      };
+
+      const min_age = optionalInt(minAgeRaw, "Мин. возраст", 14, 99);
+      const max_age = optionalInt(maxAgeRaw, "Макс. возраст", 14, 99);
+      const min_mmr = optionalInt(minMmrRaw, "Мин. MMR", 0, 20000);
+      const max_mmr = optionalInt(maxMmrRaw, "Макс. MMR", 0, 20000);
+
+      if (min_age != null && max_age != null && min_age > max_age) {
+        throw new Error("Мин. возраст больше макс.");
+      }
+      if (min_mmr != null && max_mmr != null && min_mmr > max_mmr) {
+        throw new Error("Мин. MMR больше макс.");
+      }
+
+      await api("/api/profile/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          wanted_positions: f.wanted_positions,
+          min_age,
+          max_age,
+          min_mmr,
+          max_mmr,
+        }),
+      });
+      await refreshMe();
+      state.browse = null;
+      state.profileView = "main";
+      state.settingsForm = null;
+      toast("Поиск обновлён");
+      haptic("medium");
+      render();
+    } catch (err) {
+      toast(err.message);
     }
   };
 }
