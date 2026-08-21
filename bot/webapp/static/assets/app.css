@@ -210,28 +210,33 @@ button {
   background: var(--accent-dim);
   border: 1px solid rgba(47, 111, 237, 0.28);
   color: var(--accent);
-  font-size: 1.35rem;
 }
 
 .btn-dislike {
   background: rgba(196, 91, 102, 0.08);
   border: 1px solid rgba(196, 91, 102, 0.25);
   color: var(--dislike);
-  font-size: 1.35rem;
 }
 
 .btn-msg {
   background: rgba(47, 111, 237, 0.08);
   border: 1px solid rgba(47, 111, 237, 0.22);
   color: var(--accent);
-  font-size: 1.1rem;
 }
 
 .btn-undo {
   background: #fff;
   border: 1px solid var(--line);
   color: var(--muted);
-  font-size: 1.1rem;
+}
+
+.btn .ico {
+  width: 22px;
+  height: 22px;
+  display: block;
+  background-color: currentColor;
+  -webkit-mask: var(--ico) center / contain no-repeat;
+  mask: var(--ico) center / contain no-repeat;
 }
 
 .btn-block {
