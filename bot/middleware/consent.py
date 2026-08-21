@@ -15,8 +15,8 @@ CONSENT_PENDING_MESSAGE = "consent_pending_message"
 CONSENT_GATE_SHOWN = "consent_gate_shown"
 
 EXISTING_USER_CONSENT_TEXT = (
-    "Продолжая пользоваться ботом, ты соглашаешься на обработку и отображение "
-    "информации из своей анкеты другим пользователям для поиска игроков."
+    "Чтобы продолжить, подпишись на тгк @flazenjxrf и подтверди согласие "
+    "на обработку и отображение данных анкеты другим игрокам для поиска тиммейтов."
 )
 
 _REGISTRATION_STATE_PREFIXES = (
