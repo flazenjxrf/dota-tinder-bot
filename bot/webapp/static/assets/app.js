@@ -424,8 +424,6 @@ async function renderBrowse() {
         haptic(action === "like" ? "medium" : "light");
         if (res.is_match) {
           showMatchModal(res.match_profile);
-        } else {
-          toast(action === "like" ? "Лайк отправлен" : "Пропущено");
         }
         await refreshMe();
         render();
@@ -447,7 +445,6 @@ async function renderBrowse() {
         state.browse = { profile: state.lastSwipedProfile };
         state.lastSwipedId = null;
         state.lastSwipedProfile = null;
-        toast("Вернули анкету");
         haptic("light");
         render();
       } catch (e) {
@@ -553,7 +550,6 @@ async function renderLikes() {
         });
         await refreshMe();
         state.likesIndex = 0;
-        toast("Пропущено");
         render();
       } catch (e) {
         toast(e.message);
@@ -569,7 +565,6 @@ async function renderLikes() {
         state.likesIndex = 0;
         haptic("medium");
         if (res.is_match) showMatchModal(res.match_profile);
-        else toast("Лайк в ответ");
         render();
       } catch (e) {
         toast(e.message);
