@@ -3,12 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
   <title>FeedEther</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/app.css" />
+  <!-- bump ?v= after UI deploys so Telegram WebView не тянет старый кэш -->
+  <link rel="stylesheet" href="/assets/app.css?v=20260822c" />
 </head>
 <body>
   <div id="app">
@@ -17,6 +20,6 @@
       <p class="boot-sub">Загрузка…</p>
     </div>
   </div>
-  <script type="module" src="/assets/app.js"></script>
+  <script type="module" src="/assets/app.js?v=20260822c"></script>
 </body>
 </html>
