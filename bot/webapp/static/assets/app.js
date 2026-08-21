@@ -6,6 +6,117 @@ const POSITIONS = [
   { id: 4, label: "Саппорт" },
 ];
 
+const AGE_MIN = 14;
+const AGE_MAX = 99;
+const MMR_MIN = 0;
+const MMR_MAX = 20000;
+const MMR_STEP = 100;
+
+function formatMmr(value) {
+  return Number(value).toLocaleString("ru-RU");
+}
+
+function sliderField({ id, label, min, max, step = 1, value, format = (v) => String(v) }) {
+  const fallback = Math.round((min + max) / 2);
+  let v = value === "" || value == null ? fallback : Number(value);
+  if (Number.isNaN(v)) v = fallback;
+  v = Math.min(max, Math.max(min, v));
+  if (step > 1) v = Math.round(v / step) * step;
+  return `
+    <div class="field slider-field">
+      <div class="slider-head">
+        <label>${label}</label>
+        <strong class="slider-val" data-for="${id}">${format(v)}</strong>
+      </div>
+      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" />
+    </div>`;
+}
+
+function dualSliderField({
+  minId,
+  maxId,
+  label,
+  min,
+  max,
+  step = 1,
+  minValue,
+  maxValue,
+  format = (v) => String(v),
+}) {
+  let lo = minValue === "" || minValue == null ? min : Number(minValue);
+  let hi = maxValue === "" || maxValue == null ? max : Number(maxValue);
+  if (Number.isNaN(lo)) lo = min;
+  if (Number.isNaN(hi)) hi = max;
+  lo = Math.min(max, Math.max(min, lo));
+  hi = Math.min(max, Math.max(min, hi));
+  if (lo > hi) [lo, hi] = [hi, lo];
+  if (step > 1) {
+    lo = Math.round(lo / step) * step;
+    hi = Math.round(hi / step) * step;
+  }
+  return `
+    <div class="field slider-field dual" data-dual="${minId}|${maxId}">
+      <div class="slider-head">
+        <label>${label}</label>
+        <strong><span data-for="${minId}">${format(lo)}</span>–<span data-for="${maxId}">${format(hi)}</span></strong>
+      </div>
+      <input type="range" id="${minId}" min="${min}" max="${max}" step="${step}" value="${lo}" aria-label="Мин. ${label}" />
+      <input type="range" id="${maxId}" min="${min}" max="${max}" step="${step}" value="${hi}" aria-label="Макс. ${label}" />
+    </div>`;
+}
+
+function bindSliders(root) {
+  root.querySelectorAll('input[type="range"]').forEach((input) => {
+    const updateLabel = () => {
+      root.querySelectorAll(`[data-for="${input.id}"]`).forEach((el) => {
+        el.textContent = input.id.includes("mmr") ? formatMmr(input.value) : input.value;
+      });
+    };
+    input.addEventListener("input", () => {
+      const dual = input.closest("[data-dual]");
+      if (dual) {
+        const [minId, maxId] = dual.dataset.dual.split("|");
+        const minEl = root.querySelector(`#${minId}`);
+        const maxEl = root.querySelector(`#${maxId}`);
+        if (minEl && maxEl) {
+          let lo = Number(minEl.value);
+          let hi = Number(maxEl.value);
+          if (input.id === minId && lo > hi) {
+            maxEl.value = String(lo);
+            hi = lo;
+          }
+          if (input.id === maxId && hi < lo) {
+            minEl.value = String(hi);
+            lo = hi;
+          }
+          root.querySelectorAll(`[data-for="${minId}"]`).forEach((el) => {
+            el.textContent = minId.includes("mmr") ? formatMmr(lo) : String(lo);
+          });
+          root.querySelectorAll(`[data-for="${maxId}"]`).forEach((el) => {
+            el.textContent = maxId.includes("mmr") ? formatMmr(hi) : String(hi);
+          });
+          return;
+        }
+      }
+      updateLabel();
+    });
+  });
+}
+
+function readRangeValue(root, id) {
+  return Number(root.querySelector(`#${id}`).value);
+}
+
+function dualFilterPayload(lo, hi, fullMin, fullMax) {
+  if (lo <= fullMin && hi >= fullMax) {
+    return { min: null, max: null };
+  }
+  return {
+    min: lo <= fullMin ? null : lo,
+    max: hi >= fullMax ? null : hi,
+  };
+}
+
 const state = {
   me: null,
   tab: "browse",
@@ -22,14 +133,18 @@ const state = {
   register: {
     step: 0,
     name: "",
-    age: "",
+    age: "18",
     city: "",
-    mmr: "",
+    mmr: "3000",
     positions: [],
     bio: "",
     photo_file_id: "",
     photo_preview: "",
     wanted_positions: [],
+    min_age: AGE_MIN,
+    max_age: AGE_MAX,
+    min_mmr: MMR_MIN,
+    max_mmr: MMR_MAX,
   },
 };
 
@@ -240,7 +355,13 @@ function renderRegister() {
     () => `
       <div class="panel stack">
         <h2>Возраст</h2>
-        <div class="field"><input id="age" type="number" min="14" max="99" value="${escapeHtml(r.age)}" /></div>
+        ${sliderField({
+          id: "age",
+          label: "Твой возраст",
+          min: AGE_MIN,
+          max: AGE_MAX,
+          value: r.age || 18,
+        })}
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
     () => `
@@ -258,7 +379,15 @@ function renderRegister() {
     () => `
       <div class="panel stack">
         <h2>MMR</h2>
-        <div class="field"><input id="mmr" type="number" min="0" max="20000" value="${escapeHtml(r.mmr)}" /></div>
+        ${sliderField({
+          id: "mmr",
+          label: "Твой MMR",
+          min: MMR_MIN,
+          max: MMR_MAX,
+          step: MMR_STEP,
+          value: r.mmr || 3000,
+          format: formatMmr,
+        })}
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
     () => `
@@ -277,8 +406,28 @@ function renderRegister() {
     () => `
       <div class="panel stack">
         <h2>Кого ищем</h2>
-        <p class="muted">Роли напарника (можно пропустить)</p>
+        <p class="muted">Можно оставить как есть — без жёстких фильтров</p>
         ${posButtons(r.wanted_positions, "wanted")}
+        ${dualSliderField({
+          minId: "min_age",
+          maxId: "max_age",
+          label: "Возраст",
+          min: AGE_MIN,
+          max: AGE_MAX,
+          minValue: r.min_age ?? AGE_MIN,
+          maxValue: r.max_age ?? AGE_MAX,
+        })}
+        ${dualSliderField({
+          minId: "min_mmr",
+          maxId: "max_mmr",
+          label: "MMR",
+          min: MMR_MIN,
+          max: MMR_MAX,
+          step: MMR_STEP,
+          minValue: r.min_mmr ?? MMR_MIN,
+          maxValue: r.max_mmr ?? MMR_MAX,
+          format: formatMmr,
+        })}
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
   ];
@@ -288,6 +437,7 @@ function renderRegister() {
 
   if (r.step === 3) bindPos(root, "positions", r.positions);
   if (r.step === 7) bindPos(root, "wanted", r.wanted_positions);
+  bindSliders(root);
 
   const next = root.querySelector("#next");
   if (next) {
@@ -297,18 +447,14 @@ function renderRegister() {
           r.name = root.querySelector("#name").value.trim();
           if (!r.name) throw new Error("Введи имя");
         } else if (r.step === 1) {
-          r.age = root.querySelector("#age").value;
-          const age = Number(r.age);
-          if (!age || age < 14 || age > 99) throw new Error("Возраст 14–99");
+          r.age = String(readRangeValue(root, "age"));
         } else if (r.step === 2) {
           r.city = root.querySelector("#city").value.trim();
           if (!r.city) throw new Error("Укажи город");
         } else if (r.step === 3) {
           if (!r.positions.length) throw new Error("Выбери роли");
         } else if (r.step === 4) {
-          r.mmr = root.querySelector("#mmr").value;
-          const mmr = Number(r.mmr);
-          if (Number.isNaN(mmr) || mmr < 0) throw new Error("Некорректный MMR");
+          r.mmr = String(readRangeValue(root, "mmr"));
         } else if (r.step === 5) {
           r.bio = root.querySelector("#bio").value.trim();
         } else if (r.step === 6) {
@@ -346,6 +492,18 @@ function renderRegister() {
   if (finish) {
     finish.onclick = async () => {
       try {
+        const ageFilter = dualFilterPayload(
+          readRangeValue(root, "min_age"),
+          readRangeValue(root, "max_age"),
+          AGE_MIN,
+          AGE_MAX
+        );
+        const mmrFilter = dualFilterPayload(
+          readRangeValue(root, "min_mmr"),
+          readRangeValue(root, "max_mmr"),
+          MMR_MIN,
+          MMR_MAX
+        );
         await api("/api/register", {
           method: "POST",
           body: JSON.stringify({
@@ -357,6 +515,10 @@ function renderRegister() {
             bio: r.bio,
             photo_file_id: r.photo_file_id,
             wanted_positions: r.wanted_positions,
+            min_age: ageFilter.min,
+            max_age: ageFilter.max,
+            min_mmr: mmrFilter.min,
+            max_mmr: mmrFilter.max,
           }),
         });
         await refreshMe();
@@ -699,10 +861,10 @@ async function renderProfile() {
     const s = state.me.profile.settings || {};
     state.settingsForm = {
       wanted_positions: [...(s.wanted_positions || [])],
-      min_age: s.min_age ?? "",
-      max_age: s.max_age ?? "",
-      min_mmr: s.min_mmr ?? "",
-      max_mmr: s.max_mmr ?? "",
+      min_age: s.min_age ?? AGE_MIN,
+      max_age: s.max_age ?? AGE_MAX,
+      min_mmr: s.min_mmr ?? MMR_MIN,
+      max_mmr: s.max_mmr ?? MMR_MAX,
     };
     state.profileView = "settings";
     render();
@@ -769,9 +931,23 @@ function renderEditProfile() {
       </div>
       <h2>Анкета</h2>
       <div class="field"><label>Имя</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
-      <div class="field"><label>Возраст</label><input id="age" type="number" min="14" max="99" value="${escapeHtml(e.age)}" /></div>
+      ${sliderField({
+        id: "age",
+        label: "Возраст",
+        min: AGE_MIN,
+        max: AGE_MAX,
+        value: e.age || 18,
+      })}
       <div class="field"><label>Город</label><input id="city" maxlength="50" value="${escapeHtml(e.city)}" /></div>
-      <div class="field"><label>MMR</label><input id="mmr" type="number" min="0" max="20000" value="${escapeHtml(e.mmr)}" /></div>
+      ${sliderField({
+        id: "mmr",
+        label: "MMR",
+        min: MMR_MIN,
+        max: MMR_MAX,
+        step: MMR_STEP,
+        value: e.mmr || 3000,
+        format: formatMmr,
+      })}
       <div class="field"><label>Роли</label>${posButtons(e.positions, "edit-pos")}</div>
       <div class="field"><label>О себе</label><textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea></div>
       <div class="field">
@@ -788,6 +964,7 @@ function renderEditProfile() {
   );
   bindNav(root);
   bindPos(root, "edit-pos", e.positions);
+  bindSliders(root);
 
   root.querySelector("#back").onclick = () => {
     state.profileView = "main";
@@ -815,17 +992,17 @@ function renderEditProfile() {
   root.querySelector("#save").onclick = async () => {
     try {
       e.name = root.querySelector("#name").value.trim();
-      e.age = root.querySelector("#age").value;
+      e.age = String(readRangeValue(root, "age"));
       e.city = root.querySelector("#city").value.trim();
-      e.mmr = root.querySelector("#mmr").value;
+      e.mmr = String(readRangeValue(root, "mmr"));
       e.bio = root.querySelector("#bio").value.trim();
 
       if (!e.name) throw new Error("Введи имя");
       const age = Number(e.age);
-      if (!age || age < 14 || age > 99) throw new Error("Возраст 14–99");
+      if (!age || age < AGE_MIN || age > AGE_MAX) throw new Error(`Возраст ${AGE_MIN}–${AGE_MAX}`);
       if (!e.city) throw new Error("Укажи город");
       const mmr = Number(e.mmr);
-      if (Number.isNaN(mmr) || mmr < 0) throw new Error("Некорректный MMR");
+      if (Number.isNaN(mmr) || mmr < MMR_MIN) throw new Error("Некорректный MMR");
       if (!e.positions.length) throw new Error("Выбери хотя бы одну роль");
       if (!e.photo_file_id) throw new Error("Нужно фото");
 
@@ -869,21 +1046,34 @@ function renderSearchSettings() {
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
       <h2>Настройки поиска</h2>
-      <p class="muted" style="margin:0">Пустые поля = без ограничения</p>
+      <p class="muted" style="margin:0">Крайние значения = без ограничения</p>
       <div class="field"><label>Ищем роли</label>${posButtons(f.wanted_positions, "want-pos")}</div>
-      <div class="row">
-        <div class="field"><label>Мин. возраст</label><input id="min_age" type="number" min="14" max="99" value="${escapeHtml(f.min_age)}" placeholder="—" /></div>
-        <div class="field"><label>Макс. возраст</label><input id="max_age" type="number" min="14" max="99" value="${escapeHtml(f.max_age)}" placeholder="—" /></div>
-      </div>
-      <div class="row">
-        <div class="field"><label>Мин. MMR</label><input id="min_mmr" type="number" min="0" max="20000" value="${escapeHtml(f.min_mmr)}" placeholder="—" /></div>
-        <div class="field"><label>Макс. MMR</label><input id="max_mmr" type="number" min="0" max="20000" value="${escapeHtml(f.max_mmr)}" placeholder="—" /></div>
-      </div>
+      ${dualSliderField({
+        minId: "min_age",
+        maxId: "max_age",
+        label: "Возраст",
+        min: AGE_MIN,
+        max: AGE_MAX,
+        minValue: f.min_age,
+        maxValue: f.max_age,
+      })}
+      ${dualSliderField({
+        minId: "min_mmr",
+        maxId: "max_mmr",
+        label: "MMR",
+        min: MMR_MIN,
+        max: MMR_MAX,
+        step: MMR_STEP,
+        minValue: f.min_mmr,
+        maxValue: f.max_mmr,
+        format: formatMmr,
+      })}
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
     </div>`
   );
   bindNav(root);
   bindPos(root, "want-pos", f.wanted_positions);
+  bindSliders(root);
 
   root.querySelector("#back").onclick = () => {
     state.profileView = "main";
@@ -893,38 +1083,27 @@ function renderSearchSettings() {
 
   root.querySelector("#save").onclick = async () => {
     try {
-      const minAgeRaw = root.querySelector("#min_age").value.trim();
-      const maxAgeRaw = root.querySelector("#max_age").value.trim();
-      const minMmrRaw = root.querySelector("#min_mmr").value.trim();
-      const maxMmrRaw = root.querySelector("#max_mmr").value.trim();
-
-      const optionalInt = (raw, label, min, max) => {
-        if (!raw) return null;
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${label}: ${min}–${max}`);
-        return n;
-      };
-
-      const min_age = optionalInt(minAgeRaw, "Мин. возраст", 14, 99);
-      const max_age = optionalInt(maxAgeRaw, "Макс. возраст", 14, 99);
-      const min_mmr = optionalInt(minMmrRaw, "Мин. MMR", 0, 20000);
-      const max_mmr = optionalInt(maxMmrRaw, "Макс. MMR", 0, 20000);
-
-      if (min_age != null && max_age != null && min_age > max_age) {
-        throw new Error("Мин. возраст больше макс.");
-      }
-      if (min_mmr != null && max_mmr != null && min_mmr > max_mmr) {
-        throw new Error("Мин. MMR больше макс.");
-      }
+      const ageFilter = dualFilterPayload(
+        readRangeValue(root, "min_age"),
+        readRangeValue(root, "max_age"),
+        AGE_MIN,
+        AGE_MAX
+      );
+      const mmrFilter = dualFilterPayload(
+        readRangeValue(root, "min_mmr"),
+        readRangeValue(root, "max_mmr"),
+        MMR_MIN,
+        MMR_MAX
+      );
 
       await api("/api/profile/settings", {
         method: "PATCH",
         body: JSON.stringify({
           wanted_positions: f.wanted_positions,
-          min_age,
-          max_age,
-          min_mmr,
-          max_mmr,
+          min_age: ageFilter.min,
+          max_age: ageFilter.max,
+          min_mmr: mmrFilter.min,
+          max_mmr: mmrFilter.max,
         }),
       });
       await refreshMe();
