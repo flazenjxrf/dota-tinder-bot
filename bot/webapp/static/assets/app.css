@@ -1,17 +1,17 @@
 :root {
-  --bg0: #0b1014;
-  --bg1: #121a22;
-  --bg2: #1a2632;
-  --ink: #eef3f7;
-  --muted: #8fa3b5;
-  --line: rgba(255, 255, 255, 0.08);
-  --accent: #3dd6c6;
-  --accent-dim: rgba(61, 214, 198, 0.16);
-  --like: #5eead4;
-  --dislike: #f07178;
-  --match: #7dd3a7;
-  --danger: #ff7b72;
-  --card-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --bg0: #f3f6f8;
+  --bg1: #ffffff;
+  --bg2: #e8eef3;
+  --ink: #1a2430;
+  --muted: #6b7c8c;
+  --line: rgba(26, 36, 48, 0.1);
+  --accent: #0f9e8f;
+  --accent-dim: rgba(15, 158, 143, 0.12);
+  --like: #0f9e8f;
+  --dislike: #e25563;
+  --match: #2f9e6a;
+  --danger: #d64545;
+  --card-shadow: 0 10px 28px rgba(26, 36, 48, 0.08);
   --radius: 18px;
   --nav-h: 64px;
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -28,9 +28,9 @@ body {
   margin: 0;
   min-height: 100%;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(61, 214, 198, 0.12), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, rgba(90, 140, 255, 0.1), transparent 50%),
-    linear-gradient(180deg, var(--bg0), #070b0f 70%);
+    radial-gradient(900px 420px at 0% -10%, rgba(15, 158, 143, 0.1), transparent 55%),
+    radial-gradient(700px 380px at 100% 0%, rgba(70, 130, 180, 0.08), transparent 50%),
+    linear-gradient(180deg, #f7fafb, var(--bg0) 55%);
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
@@ -72,10 +72,7 @@ button {
   font-weight: 800;
   letter-spacing: -0.03em;
   font-size: 2rem;
-  background: linear-gradient(120deg, #9ff3ea, #e8f7ff 45%, #7dd3a7);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent);
 }
 
 .boot-sub,
@@ -113,7 +110,7 @@ button {
   padding: 0 6px;
   border-radius: 999px;
   background: var(--accent);
-  color: #04201c;
+  color: #fff;
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -125,7 +122,6 @@ button {
   background: var(--bg1);
   box-shadow: var(--card-shadow);
   border: 1px solid var(--line);
-  min-height: 520px;
   display: flex;
   flex-direction: column;
 }
@@ -133,25 +129,40 @@ button {
 .card-photo {
   position: relative;
   aspect-ratio: 3 / 4;
-  max-height: 58vh;
-  background:
-    linear-gradient(180deg, transparent 40%, rgba(7, 11, 15, 0.92)),
-    var(--bg2);
+  max-height: min(58vh, 520px);
+  background: var(--bg2);
   overflow: hidden;
 }
 
-.card-photo img {
+/* Размытый фон + целиком влезающее фото */
+.card-photo-bg {
+  position: absolute;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  object-fit: cover;
+  filter: blur(22px) saturate(1.05);
+  transform: scale(1.08);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.card-photo-main {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   display: block;
 }
 
 .card-photo .fade {
   position: absolute;
   inset: auto 0 0;
-  height: 45%;
-  background: linear-gradient(180deg, transparent, rgba(7, 11, 15, 0.95));
+  z-index: 2;
+  height: 28%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.92));
   pointer-events: none;
 }
 
@@ -184,14 +195,15 @@ button {
   gap: 4px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #f0f4f7;
   border: 1px solid var(--line);
   font-size: 0.82rem;
+  color: #3d4f5f;
 }
 
 .chip.accent {
   background: var(--accent-dim);
-  border-color: rgba(61, 214, 198, 0.35);
+  border-color: rgba(15, 158, 143, 0.28);
   color: var(--accent);
 }
 
@@ -234,38 +246,39 @@ button {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #41e0cf, #2bb8a8);
-  color: #04201c;
+  background: linear-gradient(135deg, #19b5a4, #0f9e8f);
+  color: #fff;
 }
 
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.04);
+  background: #fff;
   border: 1px solid var(--line);
+  color: var(--ink);
 }
 
 .btn-like {
-  background: rgba(94, 234, 212, 0.14);
-  border: 1px solid rgba(94, 234, 212, 0.35);
+  background: rgba(15, 158, 143, 0.1);
+  border: 1px solid rgba(15, 158, 143, 0.3);
   color: var(--like);
   font-size: 1.35rem;
 }
 
 .btn-dislike {
-  background: rgba(240, 113, 120, 0.12);
-  border: 1px solid rgba(240, 113, 120, 0.35);
+  background: rgba(226, 85, 99, 0.08);
+  border: 1px solid rgba(226, 85, 99, 0.28);
   color: var(--dislike);
   font-size: 1.35rem;
 }
 
 .btn-msg {
-  background: rgba(125, 211, 167, 0.12);
-  border: 1px solid rgba(125, 211, 167, 0.3);
+  background: rgba(47, 158, 106, 0.1);
+  border: 1px solid rgba(47, 158, 106, 0.28);
   color: var(--match);
   font-size: 1.1rem;
 }
 
 .btn-undo {
-  background: rgba(255, 255, 255, 0.05);
+  background: #fff;
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 1.1rem;
@@ -285,7 +298,7 @@ button {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
-  background: rgba(8, 12, 16, 0.88);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
   z-index: 20;
@@ -321,10 +334,11 @@ button {
 }
 
 .panel {
-  background: rgba(18, 26, 34, 0.85);
+  background: var(--bg1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
+  box-shadow: var(--card-shadow);
 }
 
 .panel h2 {
@@ -356,7 +370,7 @@ button {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
+  background: #f7fafb;
   outline: none;
 }
 
@@ -367,7 +381,8 @@ button {
 
 .field input:focus,
 .field textarea:focus {
-  border-color: rgba(61, 214, 198, 0.5);
+  border-color: rgba(15, 158, 143, 0.55);
+  background: #fff;
 }
 
 .pos-grid {
@@ -380,11 +395,11 @@ button {
   min-height: 44px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+  background: #fff;
 }
 
 .pos-grid button.on {
-  border-color: rgba(61, 214, 198, 0.5);
+  border-color: rgba(15, 158, 143, 0.45);
   background: var(--accent-dim);
   color: var(--accent);
 }
@@ -408,9 +423,9 @@ button {
   left: 50%;
   bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
   transform: translateX(-50%) translateY(20px);
-  background: #15202b;
-  border: 1px solid var(--line);
-  color: var(--ink);
+  background: #1a2430;
+  border: 1px solid transparent;
+  color: #fff;
   padding: 10px 14px;
   border-radius: 12px;
   opacity: 0;
@@ -429,7 +444,7 @@ button {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(26, 36, 48, 0.35);
   display: grid;
   place-items: end center;
   z-index: 30;
@@ -446,6 +461,8 @@ button {
   display: grid;
   gap: 12px;
   animation: rise 0.2s ease;
+  max-height: min(88vh, 820px);
+  overflow: auto;
 }
 
 @keyframes rise {
@@ -481,9 +498,9 @@ button {
   margin-top: 8px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(125, 211, 167, 0.1);
-  border: 1px solid rgba(125, 211, 167, 0.25);
-  color: #c8f0d8;
+  background: rgba(47, 158, 106, 0.1);
+  border: 1px solid rgba(47, 158, 106, 0.22);
+  color: #1f6b45;
   font-size: 0.92rem;
 }
 
@@ -494,7 +511,7 @@ button {
 .loader {
   width: 28px;
   height: 28px;
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(26, 36, 48, 0.12);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -519,10 +536,32 @@ button {
   cursor: pointer;
 }
 
-.preview {
+.preview-wrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
-  object-fit: cover;
   border-radius: 14px;
   border: 1px solid var(--line);
+  overflow: hidden;
+  background: var(--bg2);
+}
+
+.preview-wrap img.preview-bg {
+  position: absolute;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  object-fit: cover;
+  filter: blur(20px);
+  opacity: 0.5;
+}
+
+.preview-wrap img.preview {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
 }

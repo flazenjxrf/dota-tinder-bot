@@ -94,10 +94,12 @@ function profileCard(profile, extraHtml = "") {
   if (profile.aura) reps.push(`🔥 ${profile.aura}`);
   if (profile.vibe) reps.push(`💜 ${profile.vibe}`);
   const roles = (profile.position_labels || []).map((r) => `<span class="chip">${escapeHtml(r)}</span>`).join("");
+  const src = escapeHtml(profile.photo_url);
   return `
     <article class="card">
       <div class="card-photo">
-        <img src="${escapeHtml(profile.photo_url)}" alt="" loading="lazy" onerror="this.style.opacity=0.2" />
+        <img class="card-photo-bg" src="${src}" alt="" aria-hidden="true" />
+        <img class="card-photo-main" src="${src}" alt="" loading="lazy" onerror="this.style.opacity=0.25" />
         <div class="fade"></div>
       </div>
       <div class="card-body">
@@ -263,7 +265,7 @@ function renderRegister() {
     () => `
       <div class="panel stack">
         <h2>Фото</h2>
-        ${r.photo_preview ? `<img class="preview" src="${r.photo_preview}" alt="" />` : `<p class="muted">Загрузи фото анкеты</p>`}
+        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview-bg" src="${r.photo_preview}" alt="" /><img class="preview" src="${r.photo_preview}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
         <label class="btn btn-ghost btn-block file-btn">Выбрать фото<input type="file" id="photo" accept="image/*" /></label>
         <button class="btn btn-primary btn-block" id="next" ${r.photo_file_id ? "" : "disabled"}>Дальше</button>
       </div>`,
@@ -729,8 +731,8 @@ async function main() {
     tg.ready();
     tg.expand();
     try {
-      tg.setHeaderColor("#0b1014");
-      tg.setBackgroundColor("#0b1014");
+      tg.setHeaderColor("#f3f6f8");
+      tg.setBackgroundColor("#f3f6f8");
     } catch {
       /* older clients */
     }
