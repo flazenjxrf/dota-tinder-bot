@@ -98,9 +98,7 @@ function profileCard(profile, extraHtml = "") {
   return `
     <article class="card">
       <div class="card-photo">
-        <img class="card-photo-bg" src="${src}" alt="" aria-hidden="true" />
         <img class="card-photo-main" src="${src}" alt="" loading="lazy" onerror="this.style.opacity=0.25" />
-        <div class="fade"></div>
       </div>
       <div class="card-body">
         <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
@@ -264,7 +262,7 @@ function renderRegister() {
     () => `
       <div class="panel stack">
         <h2>Фото</h2>
-        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview-bg" src="${r.photo_preview}" alt="" /><img class="preview" src="${r.photo_preview}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
+        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${r.photo_preview}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
         <label class="btn btn-ghost btn-block file-btn">Выбрать фото<input type="file" id="photo" accept="image/*" /></label>
         <button class="btn btn-primary btn-block" id="next" ${r.photo_file_id ? "" : "disabled"}>Дальше</button>
       </div>`,
