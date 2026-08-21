@@ -1,17 +1,18 @@
 :root {
-  --bg0: #f3f6f8;
+  --bg0: #f2f6fb;
   --bg1: #ffffff;
-  --bg2: #e8eef3;
-  --ink: #1a2430;
-  --muted: #6b7c8c;
-  --line: rgba(26, 36, 48, 0.1);
-  --accent: #0f9e8f;
-  --accent-dim: rgba(15, 158, 143, 0.12);
-  --like: #0f9e8f;
-  --dislike: #e25563;
-  --match: #2f9e6a;
-  --danger: #d64545;
-  --card-shadow: 0 10px 28px rgba(26, 36, 48, 0.08);
+  --bg2: #e8eef6;
+  --ink: #1b2430;
+  --muted: #7a8798;
+  --line: rgba(27, 36, 48, 0.1);
+  --accent: #2f6fed;
+  --accent-soft: #5b8def;
+  --accent-dim: rgba(47, 111, 237, 0.12);
+  --like: #2f6fed;
+  --dislike: #c45b66;
+  --match: #2f6fed;
+  --danger: #c45b66;
+  --card-shadow: 0 10px 28px rgba(40, 70, 120, 0.08);
   --radius: 18px;
   --nav-h: 64px;
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -28,9 +29,9 @@ body {
   margin: 0;
   min-height: 100%;
   background:
-    radial-gradient(900px 420px at 0% -10%, rgba(15, 158, 143, 0.1), transparent 55%),
-    radial-gradient(700px 380px at 100% 0%, rgba(70, 130, 180, 0.08), transparent 50%),
-    linear-gradient(180deg, #f7fafb, var(--bg0) 55%);
+    radial-gradient(900px 420px at 0% -10%, rgba(47, 111, 237, 0.1), transparent 55%),
+    radial-gradient(700px 380px at 100% 0%, rgba(120, 170, 230, 0.12), transparent 50%),
+    linear-gradient(180deg, #f7f9fc, var(--bg0) 55%);
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
@@ -83,36 +84,7 @@ button {
 .shell {
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px 24px;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.topbar h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
+  padding: 12px 16px 24px;
 }
 
 .card {
@@ -134,7 +106,6 @@ button {
   overflow: hidden;
 }
 
-/* Размытый фон + целиком влезающее фото */
 .card-photo-bg {
   position: absolute;
   inset: -12%;
@@ -143,7 +114,7 @@ button {
   object-fit: cover;
   filter: blur(22px) saturate(1.05);
   transform: scale(1.08);
-  opacity: 0.55;
+  opacity: 0.5;
   pointer-events: none;
 }
 
@@ -195,15 +166,15 @@ button {
   gap: 4px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #f0f4f7;
+  background: #f0f4fa;
   border: 1px solid var(--line);
   font-size: 0.82rem;
-  color: #3d4f5f;
+  color: #4a5a6e;
 }
 
 .chip.accent {
   background: var(--accent-dim);
-  border-color: rgba(15, 158, 143, 0.28);
+  border-color: rgba(47, 111, 237, 0.28);
   color: var(--accent);
 }
 
@@ -246,7 +217,7 @@ button {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #19b5a4, #0f9e8f);
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent));
   color: #fff;
 }
 
@@ -257,23 +228,23 @@ button {
 }
 
 .btn-like {
-  background: rgba(15, 158, 143, 0.1);
-  border: 1px solid rgba(15, 158, 143, 0.3);
-  color: var(--like);
+  background: var(--accent-dim);
+  border: 1px solid rgba(47, 111, 237, 0.28);
+  color: var(--accent);
   font-size: 1.35rem;
 }
 
 .btn-dislike {
-  background: rgba(226, 85, 99, 0.08);
-  border: 1px solid rgba(226, 85, 99, 0.28);
+  background: rgba(196, 91, 102, 0.08);
+  border: 1px solid rgba(196, 91, 102, 0.25);
   color: var(--dislike);
   font-size: 1.35rem;
 }
 
 .btn-msg {
-  background: rgba(47, 158, 106, 0.1);
-  border: 1px solid rgba(47, 158, 106, 0.28);
-  color: var(--match);
+  background: rgba(47, 111, 237, 0.08);
+  border: 1px solid rgba(47, 111, 237, 0.22);
+  color: var(--accent);
   font-size: 1.1rem;
 }
 
@@ -298,7 +269,7 @@ button {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
   z-index: 20;
@@ -307,28 +278,45 @@ button {
 .nav button {
   display: grid;
   place-items: center;
-  gap: 2px;
-  color: var(--muted);
-  font-size: 0.7rem;
+  gap: 3px;
+  color: #9aa6b5;
+  font-size: 0.68rem;
   font-weight: 500;
   position: relative;
+  transition: color 0.15s ease;
+}
+
+.nav button .ico {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.nav button .ico svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .nav button.active {
   color: var(--accent);
 }
 
-.nav .ico {
-  font-size: 1.15rem;
-  line-height: 1;
+.nav button.active .ico svg {
+  stroke-width: 2.2;
 }
 
 .nav .dot {
   position: absolute;
   top: 2px;
-  right: calc(50% - 18px);
-  width: 8px;
-  height: 8px;
+  right: calc(50% - 16px);
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--accent);
 }
@@ -370,7 +358,7 @@ button {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: #f7fafb;
+  background: #f7f9fc;
   outline: none;
 }
 
@@ -381,7 +369,7 @@ button {
 
 .field input:focus,
 .field textarea:focus {
-  border-color: rgba(15, 158, 143, 0.55);
+  border-color: rgba(47, 111, 237, 0.5);
   background: #fff;
 }
 
@@ -399,7 +387,7 @@ button {
 }
 
 .pos-grid button.on {
-  border-color: rgba(15, 158, 143, 0.45);
+  border-color: rgba(47, 111, 237, 0.45);
   background: var(--accent-dim);
   color: var(--accent);
 }
@@ -423,8 +411,7 @@ button {
   left: 50%;
   bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
   transform: translateX(-50%) translateY(20px);
-  background: #1a2430;
-  border: 1px solid transparent;
+  background: #1b2430;
   color: #fff;
   padding: 10px 14px;
   border-radius: 12px;
@@ -444,7 +431,7 @@ button {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(26, 36, 48, 0.35);
+  background: rgba(27, 36, 48, 0.32);
   display: grid;
   place-items: end center;
   z-index: 30;
@@ -498,9 +485,9 @@ button {
   margin-top: 8px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(47, 158, 106, 0.1);
-  border: 1px solid rgba(47, 158, 106, 0.22);
-  color: #1f6b45;
+  background: var(--accent-dim);
+  border: 1px solid rgba(47, 111, 237, 0.2);
+  color: #2a4f9e;
   font-size: 0.92rem;
 }
 
@@ -511,7 +498,7 @@ button {
 .loader {
   width: 28px;
   height: 28px;
-  border: 2px solid rgba(26, 36, 48, 0.12);
+  border: 2px solid rgba(27, 36, 48, 0.12);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

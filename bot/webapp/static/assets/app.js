@@ -119,19 +119,25 @@ function profileCard(profile, extraHtml = "") {
 
 function navHtml() {
   const badge = state.me?.pending_likes ? `<span class="dot"></span>` : "";
+  const icons = {
+    browse: `<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>`,
+    likes: `<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.6-7 10-7 10z"/></svg>`,
+    matches: `<svg viewBox="0 0 24 24"><path d="M16.5 4.5a4 4 0 0 1 0 5.6L12 14.6 7.5 10.1a4 4 0 1 1 5.6-5.6l.4.4.4-.4a4 4 0 0 1 2.6-1z"/><path d="M8 16l2 2 6-6"/></svg>`,
+    profile: `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 19.5c1.5-3.2 4-4.5 7-4.5s5.5 1.3 7 4.5"/></svg>`,
+  };
   const items = [
-    ["browse", "🔍", "Лента"],
-    ["likes", "❤️", "Лайки"],
-    ["matches", "💚", "Мэтчи"],
-    ["profile", "👤", "Профиль"],
+    ["browse", "Лента"],
+    ["likes", "Лайки"],
+    ["matches", "Мэтчи"],
+    ["profile", "Профиль"],
   ];
   return `
     <nav class="nav">
       ${items
         .map(
-          ([id, ico, label]) => `
-        <button data-tab="${id}" class="${state.tab === id ? "active" : ""}">
-          <span class="ico">${ico}</span>
+          ([id, label]) => `
+        <button data-tab="${id}" class="${state.tab === id ? "active" : ""}" aria-label="${label}">
+          <span class="ico">${icons[id]}</span>
           <span>${label}</span>
           ${id === "likes" ? badge : ""}
         </button>`
@@ -141,16 +147,9 @@ function navHtml() {
   `;
 }
 
-function shell(title, body, { showNav = true } = {}) {
+function shell(_title, body, { showNav = true } = {}) {
   return `
     <div class="shell">
-      <div class="topbar">
-        <div>
-          <div class="brand" style="font-size:1rem;margin-bottom:2px">FeedEther</div>
-          <h1>${title}</h1>
-        </div>
-        ${state.me?.pending_likes ? `<span class="badge">${state.me.pending_likes}</span>` : ""}
-      </div>
       ${body}
     </div>
     ${showNav ? navHtml() : ""}
@@ -731,8 +730,8 @@ async function main() {
     tg.ready();
     tg.expand();
     try {
-      tg.setHeaderColor("#f3f6f8");
-      tg.setBackgroundColor("#f3f6f8");
+      tg.setHeaderColor("#f2f6fb");
+      tg.setBackgroundColor("#f2f6fb");
     } catch {
       /* older clients */
     }
