@@ -160,9 +160,32 @@ async def init_models():
         ))
         await _ensure_multi_game_schema(conn)
         await _migrate_legacy_dota_profiles(conn)
+        await _relax_legacy_user_columns(conn)
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()
+
+
+async def _relax_legacy_user_columns(conn) -> None:
+    """Старые NOT NULL на users (mmr/positions/…) ломают регистрацию после выноса в game_profiles."""
+    statements = (
+        "ALTER TABLE users ALTER COLUMN mmr DROP NOT NULL",
+        "ALTER TABLE users ALTER COLUMN mmr SET DEFAULT 0",
+        "UPDATE users SET mmr = 0 WHERE mmr IS NULL",
+        "ALTER TABLE users ALTER COLUMN positions DROP NOT NULL",
+        "ALTER TABLE users ALTER COLUMN bio DROP NOT NULL",
+        "ALTER TABLE users ALTER COLUMN photo_file_id DROP NOT NULL",
+    )
+    for stmt in statements:
+        await conn.execute(text(f"""
+            DO $$ BEGIN
+                {stmt};
+            EXCEPTION
+                WHEN undefined_column THEN NULL;
+                WHEN others THEN NULL;
+            END $$;
+        """))
+    logger.info("Legacy users columns relaxed (mmr/positions/bio/photo nullable)")
 
 
 async def _ensure_multi_game_schema(conn) -> None:
