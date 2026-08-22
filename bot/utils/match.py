@@ -4,6 +4,7 @@ from aiogram.exceptions import TelegramBadRequest
 from html import escape
 
 from bot.database.models import User
+from bot.games import game_label, role_labels
 
 POSITIONS_MAPPING = {
     1: "Керри",
@@ -27,14 +28,16 @@ CONTACT_PRIVACY_NOTE = (
 
 
 def format_match_profile_caption(user: User) -> str:
-    pos_names = [POSITIONS_MAPPING[p] for p in sorted(user.positions)]
-    pos_str = ", ".join(pos_names)
+    profile = user.display_profile()
+    game = profile.game if profile else "dota"
+    pos_str = ", ".join(role_labels(game, user.positions) or [POSITIONS_MAPPING[p] for p in sorted(user.positions) if p in POSITIONS_MAPPING])
+    rating = " · ".join(profile.ratings_display()) if profile else f"MMR: {user.mmr}"
     name_link = get_user_link(user.telegram_id, user.name, user.username)
     return (
-        f"👤 <b>Анкета напарника:</b>\n\n"
+        f"👤 <b>Анкета напарника ({game_label(game)}):</b>\n\n"
         f"🌟 {name_link}, {user.age} | 📍 {user.city}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {user.mmr}\n\n"
+        f"🏆 {rating}\n\n"
         f"💬 О себе: {user.bio}\n\n"
         f"📩 Написать: {name_link}\n"
         f"{CONTACT_PRIVACY_NOTE}"

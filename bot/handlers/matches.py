@@ -51,8 +51,10 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
         return
 
     actual_index = min(max(index, 0), total - 1)
-    pos_names = [POSITIONS_MAPPING[p] for p in sorted(partner.positions)]
+    game_profile = partner.display_profile()
+    pos_names = game_profile.role_labels() if game_profile else [POSITIONS_MAPPING[p] for p in sorted(partner.positions) if p in POSITIONS_MAPPING]
     pos_str = ", ".join(pos_names)
+    rating = " · ".join(game_profile.ratings_display()) if game_profile else f"MMR: {partner.mmr}"
     contact = get_user_link(partner.telegram_id, partner.name, partner.username)
     aura_count, vibe_count = await get_reputation_counts(partner.telegram_id)
     reputation = format_reputation_line_from_counts(aura_count, vibe_count)
@@ -61,7 +63,7 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
         f"💚 <b>Мэтч</b> ({actual_index + 1}/{total}):\n\n"
         f"🌟 {contact}, {partner.age} | {format_city_display(partner)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {partner.mmr}{reputation}\n\n"
+        f"🏆 {rating}{reputation}\n\n"
         f"💬 О себе: {partner.bio}\n\n"
         f"📩 Написать: {contact}\n"
         f"{CONTACT_PRIVACY_NOTE}\n\n"

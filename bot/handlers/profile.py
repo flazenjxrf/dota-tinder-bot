@@ -50,18 +50,22 @@ def make_profile_caption(user, ban_reason: str | None = None, reputation: str = 
     """Генерирует красивый текст карточки профиля"""
     pos_names = [positions_mapping[p] for p in sorted(user.positions)]
     pos_str = ", ".join(pos_names)
+    game_profile = user.display_profile()
     if user.status == ProfileStatus.BANNED:
         status_emoji = "🚫 Заблокирована"
-    elif user.status == ProfileStatus.ACTIVE:
+    elif game_profile and game_profile.status == ProfileStatus.ACTIVE:
         status_emoji = "🟢 Активна"
     else:
         status_emoji = "🔴 Скрыта"
+    rating = " · ".join(game_profile.ratings_display()) if game_profile else f"MMR: {user.mmr}"
+    if game_profile:
+        pos_str = ", ".join(game_profile.role_labels())
 
     caption = (
         f"👤 <b>Твой профиль:</b>\n\n"
         f"🌟 <b>{user.name}</b>, {user.age} | {format_city_display(user)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {user.mmr}{reputation}\n\n"
+        f"🏆 {rating}{reputation}\n\n"
         f"💬 : {user.bio}\n\n"
         f"📢 Статус анкеты: {status_emoji}\n"
     )
@@ -81,7 +85,9 @@ async def _get_profile_keyboard(telegram_id: int, user) -> InlineKeyboardMarkup:
     if is_banned:
         has_pending = await has_pending_unban_request(telegram_id)
         return get_banned_profile_menu_keyboard(has_pending)
-    return get_profile_menu_keyboard(user.status == ProfileStatus.ACTIVE)
+    game_profile = user.display_profile()
+    is_searching = bool(game_profile and game_profile.status == ProfileStatus.ACTIVE)
+    return get_profile_menu_keyboard(is_searching)
 
 
 async def send_my_profile_message(message: Message, telegram_id: int):
@@ -166,12 +172,13 @@ async def toggle_profile_status(callback: CallbackQuery):
         return
 
     user = await get_user_with_settings(callback.from_user.id)
-    new_status = ProfileStatus.HIDDEN if user.status == ProfileStatus.ACTIVE else ProfileStatus.ACTIVE
+    game_profile = user.display_profile()
+    current = game_profile.status if game_profile else user.status
+    new_status = ProfileStatus.HIDDEN if current == ProfileStatus.ACTIVE else ProfileStatus.ACTIVE
 
     await update_user_field(user.telegram_id, "status", new_status)
-
-    user.status = new_status
-    is_active = (new_status == ProfileStatus.ACTIVE)
+    user = await get_user_with_settings(callback.from_user.id)
+    is_active = new_status == ProfileStatus.ACTIVE
     await callback.message.edit_caption(
         caption=await _profile_caption_for(user, callback.from_user.id),
         reply_markup=await _get_profile_keyboard(callback.from_user.id, user),

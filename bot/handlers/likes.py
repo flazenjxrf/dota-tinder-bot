@@ -47,15 +47,17 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
         return
 
     actual_index = min(max(index, 0), total - 1)
-    pos_names = [positions_mapping[p] for p in sorted(next_user.positions)]
+    game_profile = next_user.display_profile()
+    pos_names = game_profile.role_labels() if game_profile else [positions_mapping[p] for p in sorted(next_user.positions) if p in positions_mapping]
     pos_str = ", ".join(pos_names)
+    rating = " · ".join(game_profile.ratings_display()) if game_profile else f"MMR: {next_user.mmr}"
     aura_count, vibe_count = await get_reputation_counts(next_user.telegram_id)
     reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     caption = (
         f"🔥 <b>Ты понравился этому игроку</b> ({actual_index + 1}/{total}):\n\n"
         f"🌟 <b>{next_user.name}</b>, {next_user.age} | {format_city_display(next_user)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {next_user.mmr}{reputation}\n\n"
+        f"🏆 {rating}{reputation}\n\n"
         f"💬 О себе: {next_user.bio}"
     )
     if like_message:

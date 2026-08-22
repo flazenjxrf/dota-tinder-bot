@@ -516,6 +516,32 @@ button {
   color: var(--accent);
 }
 
+.game-switch {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.game-switch button {
+  flex: 1;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-weight: 600;
+}
+
+.game-switch button.on {
+  border-color: rgba(47, 111, 237, 0.45);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.game-switch button span {
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
 .empty {
   text-align: center;
   padding: 48px 18px;

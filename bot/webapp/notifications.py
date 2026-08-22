@@ -38,9 +38,9 @@ def _miniapp_markup(tab: str | None = None):
     return get_webapp_keyboard(tab=tab)
 
 
-async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
-    me = await get_user_with_settings(from_user_id)
-    partner = await get_user_with_settings(to_user_id)
+async def notify_match(bot: Bot, from_user_id: int, to_user_id: int, game: str | None = None) -> None:
+    me = await get_user_with_settings(from_user_id, game)
+    partner = await get_user_with_settings(to_user_id, game)
     if not me or not partner:
         return
 
@@ -74,8 +74,8 @@ async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
         logger.exception("Не удалось отправить мэтч уведомление %s", to_user_id)
 
 
-async def notify_like_threshold(bot: Bot, to_user_id: int, from_user_id: int) -> None:
-    pending_ids = await get_pending_likes_ids(to_user_id)
+async def notify_like_threshold(bot: Bot, to_user_id: int, from_user_id: int, game: str | None = None) -> None:
+    pending_ids = await get_pending_likes_ids(to_user_id, game)
     if from_user_id not in pending_ids:
         return
 
@@ -118,16 +118,17 @@ async def process_swipe_notifications(
     *,
     is_match: bool,
     like_message: str | None = None,
+    game: str | None = None,
 ) -> None:
     """Уведомления после свайпа: мэтч, порог лайков или лайк с сообщением."""
     if is_match:
-        await notify_match(bot, from_user_id, to_user_id)
+        await notify_match(bot, from_user_id, to_user_id, game)
         return
 
     if like_message:
-        sender = await get_user_with_settings(from_user_id)
+        sender = await get_user_with_settings(from_user_id, game)
         if sender:
             await notify_like_with_message(bot, to_user_id, sender, like_message)
         return
 
-    await notify_like_threshold(bot, to_user_id, from_user_id)
+    await notify_like_threshold(bot, to_user_id, from_user_id, game)

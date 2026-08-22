@@ -1,56 +1,201 @@
 import logging
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 from bot.database.engine import session_maker
-from bot.database.models import User, SearchSettings, ProfileStatus, UserConsent, ProfileDeletion
+from bot.database.models import (
+    User, SearchSettings, ProfileStatus, UserConsent, ProfileDeletion,
+    GameProfile, GameRating,
+)
+from bot.games import DEFAULT_GAME, clamp_rating, normalize_game, rating_kinds, valid_roles
 from bot.utils.city import normalize_city, get_normalized_city
 
 
+def _user_load_options():
+    return (
+        selectinload(User.game_profiles).selectinload(GameProfile.ratings),
+        selectinload(User.game_profiles).selectinload(GameProfile.settings),
+    )
+
+
+def _attach_view(user: User | None, game: str | None) -> User | None:
+    if user is not None:
+        user._view_game = normalize_game(game or user.last_active_game)
+    return user
+
+
+def is_person_registered(user: User | None) -> bool:
+    return bool(user and user.status != ProfileStatus.INCOMPLETE)
+
+
+def is_game_searching(user: User | None, game: str | None = None) -> bool:
+    if not is_person_registered(user):
+        return False
+    profile = user.display_profile(game)
+    return bool(profile and profile.status == ProfileStatus.ACTIVE and profile.is_complete())
+
+
+def _ratings_from_data(game: str, data: dict) -> list[tuple[str, int]]:
+    raw = data.get("ratings")
+    pairs: list[tuple[str, int]] = []
+    if raw:
+        for item in raw:
+            kind = item.get("kind") if isinstance(item, dict) else None
+            value = item.get("value") if isinstance(item, dict) else None
+            if not kind or value is None:
+                continue
+            pairs.append((kind, clamp_rating(game, kind, int(value))))
+    elif data.get("mmr") is not None and game == "dota":
+        pairs.append(("mmr", clamp_rating(game, "mmr", int(data["mmr"]))))
+    known = set(rating_kinds(game))
+    return [(kind, value) for kind, value in pairs if kind in known]
+
+
+async def _upsert_game_profile(session, user: User, game: str, data: dict) -> GameProfile:
+    game = normalize_game(game)
+    profile = next((item for item in (user.game_profiles or []) if item.game == game), None)
+    if profile is None:
+        profile = GameProfile(user_id=user.telegram_id, game=game)
+        session.add(profile)
+        await session.flush()
+        if user.game_profiles is None:
+            user.game_profiles = []
+        user.game_profiles.append(profile)
+
+    roles = valid_roles(game, data.get("roles") or data.get("positions") or profile.roles)
+    if roles:
+        profile.roles = roles
+    if "bio" in data:
+        profile.bio = data.get("bio") or ""
+    photo = data.get("photo_id") or data.get("photo_file_id")
+    if photo:
+        profile.photo_file_id = photo
+    profile.status = data.get("game_status") or ProfileStatus.ACTIVE
+
+    ratings = _ratings_from_data(game, data)
+    if ratings:
+        existing = {item.kind: item for item in (profile.ratings or [])}
+        keep = set()
+        for kind, value in ratings:
+            keep.add(kind)
+            if kind in existing:
+                existing[kind].value = value
+            else:
+                session.add(GameRating(profile_id=profile.id, kind=kind, value=value))
+        for kind, item in existing.items():
+            if kind not in keep:
+                await session.delete(item)
+
+    settings = profile.settings
+    if settings is None:
+        settings = SearchSettings(game_profile_id=profile.id)
+        session.add(settings)
+        profile.settings = settings
+
+    if "wanted_roles" in data or "wanted_positions" in data:
+        wanted = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
+        settings.wanted_roles = wanted or None
+    if "min_age" in data:
+        settings.min_age = data.get("min_age")
+    if "max_age" in data:
+        settings.max_age = data.get("max_age")
+    if "wanted_rating_kind" in data:
+        settings.wanted_rating_kind = data.get("wanted_rating_kind")
+    if "min_skill" in data or "min_mmr" in data:
+        settings.min_skill = data.get("min_skill", data.get("min_mmr"))
+    if "max_skill" in data or "max_mmr" in data:
+        settings.max_skill = data.get("max_skill", data.get("max_mmr"))
+    if not settings.wanted_rating_kind:
+        kinds = [kind for kind, _ in ratings] or rating_kinds(game)
+        settings.wanted_rating_kind = kinds[0] if kinds else None
+    return profile
+
+
 async def save_user_and_settings(telegram_id: int, username: str | None, data: dict):
-    """
-    Сохраняет или обновляет анкету пользователя и его настройки поиска.
-    data - это словарь со всеми ответами из машины состояний (FSM).
-    """
+    """Сохраняет человека и игровую анкету (по умолчанию Dota)."""
     if await is_user_banned(telegram_id):
         logging.warning("Заблокированный пользователь %s попытался сохранить анкету.", telegram_id)
         return
+    game = normalize_game(data.get("game"))
     async with session_maker() as session:
         try:
-            # 1. Создаем или обновляем пользователя
-            user = User(
-                telegram_id=telegram_id,
-                username=username,
-                name=data['name'],
-                age=data['age'],
-                city=data['city'],
-                normalized_city=normalize_city(data['city']),
-                mmr=data['mmr'],
-                positions=data['positions'],
-                bio=data['bio'],
-                photo_file_id=data['photo_id'],
-                status=ProfileStatus.ACTIVE
-            )
+            stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
+            user = (await session.execute(stmt)).scalar_one_or_none()
+            if user is None:
+                user = User(telegram_id=telegram_id)
+                session.add(user)
 
-            # Используем merge для обновления, если пользователь решил пересоздать анкету
-            session.add(await session.merge(user))
+            if username is not None:
+                user.username = username
+            if data.get("name"):
+                user.name = data["name"]
+            if data.get("age") is not None:
+                user.age = data["age"]
+            if data.get("city"):
+                user.city = data["city"]
+                user.normalized_city = normalize_city(data["city"])
+            if user.status != ProfileStatus.BANNED:
+                user.status = ProfileStatus.ACTIVE
+            user.last_active_game = game
 
-            # 2. Создаем или обновляем настройки поиска
-            settings = SearchSettings(
-                user_id=telegram_id,
-                wanted_positions=data.get('wanted_positions') or None,  # Если пустой список, в БД будет NULL
-                min_age=data.get('min_age'),
-                max_age=data.get('max_age'),
-                min_mmr=data.get('min_mmr'),
-                max_mmr=data.get('max_mmr')
-            )
-
-            session.add(await session.merge(settings))
-
-            # Подтверждаем изменения
+            await session.flush()
+            await _upsert_game_profile(session, user, game, data)
             await session.commit()
-            logging.info(f"Пользователь {telegram_id} успешно сохранен в БД.")
+            logging.info("Пользователь %s сохранён (%s).", telegram_id, game)
         except Exception as e:
             await session.rollback()
-            logging.error(f"Ошибка при сохранении в БД: {e}")
+            logging.error("Ошибка при сохранении в БД: %s", e)
+            raise
+
+
+async def copy_game_card(
+    telegram_id: int,
+    from_game: str,
+    to_games: list[str] | None = None,
+    *,
+    copy_bio: bool = True,
+    copy_photo: bool = True,
+) -> int:
+    """Копирует фото/описание из одной анкеты в другие. Возвращает число обновлённых."""
+    from_game = normalize_game(from_game)
+    async with session_maker() as session:
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        if not user:
+            return 0
+        source = user.profile_for(from_game)
+        if not source:
+            return 0
+        targets = [
+            profile for profile in (user.game_profiles or [])
+            if profile.game != from_game and (not to_games or profile.game in to_games)
+        ]
+        updated = 0
+        for profile in targets:
+            if copy_bio:
+                profile.bio = source.bio
+            if copy_photo:
+                profile.photo_file_id = source.photo_file_id
+            updated += 1
+        await session.commit()
+        return updated
+
+
+async def delete_game_profile(telegram_id: int, game: str) -> bool:
+    game = normalize_game(game)
+    async with session_maker() as session:
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        if not user:
+            return False
+        profile = user.profile_for(game)
+        if not profile:
+            return False
+        await session.delete(profile)
+        remaining = [item.game for item in (user.game_profiles or []) if item.game != game]
+        if remaining and user.last_active_game == game:
+            user.last_active_game = remaining[0]
+        await session.commit()
+        return True
 
 from sqlalchemy.orm import selectinload, aliased
 from sqlalchemy import func
@@ -83,12 +228,12 @@ async def _has_valid_consent(session, telegram_id: int) -> bool:
     return latest_consent > latest_deletion
 
 
-async def get_user_with_settings(telegram_id: int) -> User | None:
-    """Получает пользователя вместе с его настройками поиска (1-к-1)"""
+async def get_user_with_settings(telegram_id: int, game: str | None = None) -> User | None:
+    """Получает пользователя вместе с игровыми анкетами, рейтингами и фильтрами."""
     async with session_maker() as session:
-        stmt = select(User).options(selectinload(User.settings)).where(User.telegram_id == telegram_id)
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
         result = await session.execute(stmt)
-        return result.scalar_one_or_none()
+        return _attach_view(result.scalar_one_or_none(), game)
 
 
 async def has_user_consented(telegram_id: int) -> bool:
@@ -167,17 +312,48 @@ async def record_user_consent(telegram_id: int, username: str | None) -> None:
         consent_cache.add(telegram_id)
         logging.info(f"Зафиксировано согласие пользователя {telegram_id}.")
 
-async def update_user_field(telegram_id: int, field_name: str, value):
-    """Обновляет одно конкретное поле в таблице users"""
+_GAME_CARD_FIELDS = {"mmr", "positions", "roles", "bio", "photo_file_id"}
+_SETTINGS_ALIASES = {
+    "wanted_positions": "wanted_roles",
+    "min_mmr": "min_skill",
+    "max_mmr": "max_skill",
+}
+
+
+async def update_user_field(telegram_id: int, field_name: str, value, game: str | None = None):
+    """Обновляет поле человека или текущей игровой анкеты."""
     async with session_maker() as session:
-        stmt = select(User).where(User.telegram_id == telegram_id)
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-        if user:
-            setattr(user, field_name, value)
-            if field_name == "city":
-                user.normalized_city = normalize_city(value)
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        if not user:
+            return
+
+        if field_name == "city":
+            user.city = value
+            user.normalized_city = normalize_city(value)
             await session.commit()
+            return
+
+        if field_name == "status" and value in (ProfileStatus.ACTIVE, ProfileStatus.HIDDEN):
+            profile = user.display_profile(game)
+            if profile:
+                profile.status = value
+            await session.commit()
+            return
+
+        if field_name in _GAME_CARD_FIELDS:
+            resolved = normalize_game(game or user.last_active_game)
+            data = {field_name: value}
+            if field_name == "mmr":
+                data = {"ratings": [{"kind": "mmr", "value": value}]}
+            elif field_name == "positions":
+                data = {"roles": value}
+            await _upsert_game_profile(session, user, resolved, data)
+            await session.commit()
+            return
+
+        setattr(user, field_name, value)
+        await session.commit()
 
 
 async def delete_user_profile(telegram_id: int) -> bool:
@@ -195,15 +371,22 @@ async def delete_user_profile(telegram_id: int) -> bool:
         logging.info(f"Профиль пользователя {telegram_id} удалён, требуется новое согласие.")
         return True
 
-async def update_settings_field(telegram_id: int, field_name: str, value):
-    """Обновляет одно конкретное поле в таблице search_settings"""
+async def update_settings_field(telegram_id: int, field_name: str, value, game: str | None = None):
+    """Обновляет фильтр поиска текущей игровой анкеты."""
+    field_name = _SETTINGS_ALIASES.get(field_name, field_name)
     async with session_maker() as session:
-        stmt = select(SearchSettings).where(SearchSettings.user_id == telegram_id)
-        result = await session.execute(stmt)
-        settings = result.scalar_one_or_none()
-        if settings:
-            setattr(settings, field_name, value)
-            await session.commit()
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        if not user:
+            return
+        profile = user.display_profile(game)
+        if not profile:
+            return
+        if profile.settings is None:
+            profile.settings = SearchSettings(game_profile_id=profile.id)
+            session.add(profile.settings)
+        setattr(profile.settings, field_name, value)
+        await session.commit()
 
 
 from sqlalchemy import select, and_, not_, exists, func
@@ -218,61 +401,83 @@ DAILY_LIKE_MESSAGE_LIMIT = 5
 LIKE_MESSAGE_MAX_LENGTH = 300
 
 
-def _apply_search_filters(stmt, settings: SearchSettings | None):
-    if not settings:
-        return stmt
-    if settings.min_age is not None:
-        stmt = stmt.where(User.age >= settings.min_age)
-    if settings.max_age is not None:
-        stmt = stmt.where(User.age <= settings.max_age)
-    if settings.min_mmr is not None:
-        stmt = stmt.where(User.mmr >= settings.min_mmr)
-    if settings.max_mmr is not None:
-        stmt = stmt.where(User.mmr <= settings.max_mmr)
-    if settings.wanted_positions:
-        stmt = stmt.where(User.positions.overlap(settings.wanted_positions))
+def _apply_search_filters(stmt, settings: SearchSettings | None, candidate, my_kinds: list[str] | None = None):
+    if settings:
+        if settings.min_age is not None:
+            stmt = stmt.where(User.age >= settings.min_age)
+        if settings.max_age is not None:
+            stmt = stmt.where(User.age <= settings.max_age)
+        if settings.wanted_roles:
+            stmt = stmt.where(candidate.roles.overlap(settings.wanted_roles))
+        kind = settings.wanted_rating_kind
+        if kind:
+            rating_conds = [
+                GameRating.profile_id == candidate.id,
+                GameRating.kind == kind,
+            ]
+            if settings.min_skill is not None:
+                rating_conds.append(GameRating.value >= settings.min_skill)
+            if settings.max_skill is not None:
+                rating_conds.append(GameRating.value <= settings.max_skill)
+            stmt = stmt.where(exists().where(and_(*rating_conds)))
+            return stmt
+    if my_kinds:
+        stmt = stmt.where(exists().where(
+            GameRating.profile_id == candidate.id,
+            GameRating.kind.in_(my_kinds),
+        ))
     return stmt
 
 
-async def get_next_profile(user_id: int) -> User | None:
-    """Ищет следующую подходящую анкету: сначала из того же города, затем остальные. Порядок случайный."""
+async def get_next_profile(user_id: int, game: str | None = None) -> User | None:
+    """Ищет следующую анкету той же игры: сначала свой город, затем остальные."""
     async with session_maker() as session:
-        stmt_user = select(User).where(User.telegram_id == user_id)
+        stmt_user = select(User).options(*_user_load_options()).where(User.telegram_id == user_id)
         current_user = (await session.execute(stmt_user)).scalar_one_or_none()
+        if not current_user:
+            return None
 
-        stmt_settings = select(SearchSettings).where(SearchSettings.user_id == user_id)
-        settings = (await session.execute(stmt_settings)).scalar_one_or_none()
+        game = normalize_game(game or current_user.last_active_game)
+        my_profile = current_user.profile_for(game)
+        settings = my_profile.settings if my_profile else None
+        my_kinds = [item.kind for item in (my_profile.ratings or [])] if my_profile else []
+        candidate = aliased(GameProfile)
 
         swipe_exists = exists().where(
             and_(
                 Swipe.from_user_id == user_id,
-                Swipe.to_user_id == User.telegram_id
+                Swipe.to_user_id == User.telegram_id,
+                Swipe.game == game,
             )
         )
 
         def build_query(same_city: bool = False):
-            stmt = select(User).where(
-                User.status == ProfileStatus.ACTIVE,
-                User.telegram_id != user_id,
-                not_(swipe_exists),
+            stmt = (
+                select(User)
+                .options(*_user_load_options())
+                .join(candidate, candidate.user_id == User.telegram_id)
+                .where(
+                    User.telegram_id != user_id,
+                    User.status != ProfileStatus.BANNED,
+                    candidate.game == game,
+                    candidate.status == ProfileStatus.ACTIVE,
+                    not_(swipe_exists),
+                )
             )
-            if same_city and current_user:
+            if same_city:
                 normalized = get_normalized_city(current_user.city, current_user.normalized_city)
                 if normalized:
                     stmt = stmt.where(User.normalized_city == normalized)
-            stmt = _apply_search_filters(stmt, settings)
+            stmt = _apply_search_filters(stmt, settings, candidate, my_kinds)
             return stmt.order_by(func.random()).limit(1)
 
         for same_city in (True, False):
-            if same_city and not get_normalized_city(
-                current_user.city if current_user else None,
-                current_user.normalized_city if current_user else None,
-            ):
+            if same_city and not get_normalized_city(current_user.city, current_user.normalized_city):
                 continue
             result = await session.execute(build_query(same_city=same_city))
             profile = result.scalar_one_or_none()
             if profile:
-                return profile
+                return _attach_view(profile, game)
 
         return None
 
@@ -299,15 +504,18 @@ async def add_swipe(
     to_user_id: int,
     action: ActionType,
     message: str | None = None,
+    game: str | None = None,
 ) -> bool:
     """
     Сохраняет свайп в БД.
     Возвращает True, если произошел взаимный мэтч (лайк в ответ на лайк).
     """
+    game = normalize_game(game)
     async with session_maker() as session:
         stmt = select(Swipe).where(
             Swipe.from_user_id == from_user_id,
             Swipe.to_user_id == to_user_id,
+            Swipe.game == game,
         )
         swipe = (await session.execute(stmt)).scalar_one_or_none()
         if swipe:
@@ -321,6 +529,7 @@ async def add_swipe(
             swipe = Swipe(
                 from_user_id=from_user_id,
                 to_user_id=to_user_id,
+                game=game,
                 action=action,
                 message=message if action == ActionType.LIKE else None,
             )
@@ -332,6 +541,7 @@ async def add_swipe(
             reverse_stmt = select(Swipe).where(
                 Swipe.from_user_id == to_user_id,
                 Swipe.to_user_id == from_user_id,
+                Swipe.game == game,
                 Swipe.action == ActionType.LIKE,
             )
             reverse_swipe = (await session.execute(reverse_stmt)).scalar_one_or_none()
@@ -345,12 +555,14 @@ async def add_swipe(
         return is_match
 
 
-async def undo_swipe(from_user_id: int, to_user_id: int) -> bool:
+async def undo_swipe(from_user_id: int, to_user_id: int, game: str | None = None) -> bool:
     """Отменяет свайп. Возвращает True, если запись была удалена."""
+    game = normalize_game(game)
     async with session_maker() as session:
         stmt = select(Swipe).where(
             Swipe.from_user_id == from_user_id,
             Swipe.to_user_id == to_user_id,
+            Swipe.game == game,
         )
         swipe = (await session.execute(stmt)).scalar_one_or_none()
         if not swipe:
@@ -360,6 +572,7 @@ async def undo_swipe(from_user_id: int, to_user_id: int) -> bool:
             reverse_stmt = select(Swipe).where(
                 Swipe.from_user_id == to_user_id,
                 Swipe.to_user_id == from_user_id,
+                Swipe.game == game,
             )
             reverse_swipe = (await session.execute(reverse_stmt)).scalar_one_or_none()
             if reverse_swipe:
@@ -370,57 +583,65 @@ async def undo_swipe(from_user_id: int, to_user_id: int) -> bool:
         return True
 
 
-def _pending_likes_conditions(user_id: int):
+def _pending_likes_conditions(user_id: int, game: str):
     """Условия для неотвеченных входящих лайков (ещё не просмотренных в «Мои лайки»)."""
-    responded_subq = select(Swipe.to_user_id).where(Swipe.from_user_id == user_id)
+    responded_subq = select(Swipe.to_user_id).where(
+        Swipe.from_user_id == user_id,
+        Swipe.game == game,
+    )
     return (
         Swipe.to_user_id == user_id,
+        Swipe.game == game,
         Swipe.action == ActionType.LIKE,
         Swipe.is_mutual == False,
-        User.status.in_([ProfileStatus.ACTIVE, ProfileStatus.HIDDEN]),
+        User.status != ProfileStatus.BANNED,
         not_(User.telegram_id.in_(responded_subq)),
     )
 
 
-async def get_pending_likes_count(user_id: int) -> int:
+async def get_pending_likes_count(user_id: int, game: str | None = None) -> int:
     """Считает количество неотвеченных входящих лайков."""
+    game = normalize_game(game)
     async with session_maker() as session:
         stmt = (
             select(func.count())
             .select_from(User)
             .join(Swipe, Swipe.from_user_id == User.telegram_id)
-            .where(*_pending_likes_conditions(user_id))
+            .where(*_pending_likes_conditions(user_id, game))
         )
         return (await session.execute(stmt)).scalar_one()
 
 
-async def get_pending_likes_data(user_id: int) -> list[tuple[int, str | None]]:
+async def get_pending_likes_data(user_id: int, game: str | None = None) -> list[tuple[int, str | None]]:
     """Возвращает (telegram_id, message) неотвеченных лайков (сначала новые)."""
+    game = normalize_game(game)
     async with session_maker() as session:
         stmt = (
             select(User.telegram_id, Swipe.message)
             .join(Swipe, Swipe.from_user_id == User.telegram_id)
-            .where(*_pending_likes_conditions(user_id))
+            .where(*_pending_likes_conditions(user_id, game))
             .order_by(Swipe.created_at.desc())
         )
         return list((await session.execute(stmt)).all())
 
 
-async def get_pending_likes_ids(user_id: int) -> list[int]:
+async def get_pending_likes_ids(user_id: int, game: str | None = None) -> list[int]:
     """Возвращает ID пользователей с неотвеченными лайками (сначала новые)."""
-    return [liker_id for liker_id, _ in await get_pending_likes_data(user_id)]
+    return [liker_id for liker_id, _ in await get_pending_likes_data(user_id, game)]
 
 
-async def get_next_pending_like(user_id: int) -> User | None:
+async def get_next_pending_like(user_id: int, game: str | None = None) -> User | None:
     """Получает первого пользователя из списка неотвеченных лайков."""
-    return await get_pending_like_at_index(user_id, 0)
+    user, _, _ = await get_pending_like_at_index(user_id, 0, game)
+    return user
 
 
 async def get_pending_like_at_index(
-    user_id: int, index: int,
+    user_id: int, index: int, game: str | None = None,
 ) -> tuple[User | None, int, str | None]:
     """Возвращает анкету по индексу, общее количество и сообщение к лайку (если есть)."""
-    pending = await get_pending_likes_data(user_id)
+    game = normalize_game(game)
+    pending = await get_pending_likes_data(user_id, game)
     total = len(pending)
     if total == 0:
         return None, 0, None
@@ -428,9 +649,9 @@ async def get_pending_like_at_index(
     index = min(max(index, 0), total - 1)
     liker_id, message = pending[index]
     async with session_maker() as session:
-        stmt = select(User).where(User.telegram_id == liker_id)
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == liker_id)
         user = (await session.execute(stmt)).scalar_one_or_none()
-        return user, total, message
+        return _attach_view(user, game), total, message
 
 
 async def add_report(
@@ -480,8 +701,9 @@ async def backfill_normalized_cities() -> int:
         return updated
 
 
-async def get_match_partner_ids(user_id: int) -> list[int]:
+async def get_match_partner_ids(user_id: int, game: str | None = None) -> list[int]:
     """Возвращает ID напарников с взаимными лайками (сначала новые)."""
+    game = normalize_game(game)
     reverse_swipe = aliased(Swipe)
     async with session_maker() as session:
         stmt = (
@@ -490,10 +712,12 @@ async def get_match_partner_ids(user_id: int) -> list[int]:
             .join(
                 reverse_swipe,
                 (Swipe.to_user_id == reverse_swipe.from_user_id)
-                & (Swipe.from_user_id == reverse_swipe.to_user_id),
+                & (Swipe.from_user_id == reverse_swipe.to_user_id)
+                & (reverse_swipe.game == Swipe.game),
             )
             .where(
                 Swipe.from_user_id == user_id,
+                Swipe.game == game,
                 Swipe.action == ActionType.LIKE,
                 reverse_swipe.action == ActionType.LIKE,
             )
@@ -502,32 +726,35 @@ async def get_match_partner_ids(user_id: int) -> list[int]:
         return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_match_at_index(user_id: int, index: int) -> tuple[User | None, int]:
+async def get_match_at_index(user_id: int, index: int, game: str | None = None) -> tuple[User | None, int]:
     """Возвращает анкету мэтча по индексу и общее количество мэтчей."""
-    partner_ids = await get_match_partner_ids(user_id)
+    game = normalize_game(game)
+    partner_ids = await get_match_partner_ids(user_id, game)
     total = len(partner_ids)
     if total == 0:
         return None, 0
 
     index = min(max(index, 0), total - 1)
     async with session_maker() as session:
-        stmt = select(User).where(User.telegram_id == partner_ids[index])
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id == partner_ids[index])
         user = (await session.execute(stmt)).scalar_one_or_none()
-        return user, total
+        return _attach_view(user, game), total
 
 
-async def are_users_matched(user_a: int, user_b: int) -> bool:
+async def are_users_matched(user_a: int, user_b: int, game: str | None = None) -> bool:
     """Проверяет, есть ли взаимный лайк между пользователями."""
-    partner_ids = await get_match_partner_ids(user_a)
+    partner_ids = await get_match_partner_ids(user_a, game)
     return user_b in partner_ids
 
 
-async def get_teammate_rating(from_user_id: int, to_user_id: int) -> tuple[bool, bool]:
+async def get_teammate_rating(from_user_id: int, to_user_id: int, game: str | None = None) -> tuple[bool, bool]:
     """Возвращает (has_aura, has_vibe), поставленные from_user_id для to_user_id."""
+    game = normalize_game(game)
     async with session_maker() as session:
         stmt = select(TeammateRating).where(
             TeammateRating.from_user_id == from_user_id,
             TeammateRating.to_user_id == to_user_id,
+            TeammateRating.game == game,
         )
         rating = (await session.execute(stmt)).scalar_one_or_none()
         if not rating:
@@ -535,15 +762,18 @@ async def get_teammate_rating(from_user_id: int, to_user_id: int) -> tuple[bool,
         return rating.has_aura, rating.has_vibe
 
 
-async def get_reputation_counts(user_id: int) -> tuple[int, int]:
+async def get_reputation_counts(user_id: int, game: str | None = None) -> tuple[int, int]:
     """Возвращает (aura_count, vibe_count) — сколько раз пользователя оценили."""
+    game = normalize_game(game)
     async with session_maker() as session:
         aura_stmt = select(func.count()).select_from(TeammateRating).where(
             TeammateRating.to_user_id == user_id,
+            TeammateRating.game == game,
             TeammateRating.has_aura.is_(True),
         )
         vibe_stmt = select(func.count()).select_from(TeammateRating).where(
             TeammateRating.to_user_id == user_id,
+            TeammateRating.game == game,
             TeammateRating.has_vibe.is_(True),
         )
         aura_count = (await session.execute(aura_stmt)).scalar_one()
@@ -557,6 +787,7 @@ async def add_teammate_rating(
     *,
     aura: bool = False,
     vibe: bool = False,
+    game: str | None = None,
 ) -> str | None:
     """
     Добавляет aura и/или vibe от мэтча. Можно дополнить вторую оценку позже.
@@ -565,7 +796,8 @@ async def add_teammate_rating(
     if from_user_id == to_user_id:
         return "Нельзя оценить самого себя."
 
-    if not await are_users_matched(from_user_id, to_user_id):
+    game = normalize_game(game)
+    if not await are_users_matched(from_user_id, to_user_id, game):
         return "Оценить можно только мэтчей."
 
     if not aura and not vibe:
@@ -575,6 +807,7 @@ async def add_teammate_rating(
         stmt = select(TeammateRating).where(
             TeammateRating.from_user_id == from_user_id,
             TeammateRating.to_user_id == to_user_id,
+            TeammateRating.game == game,
         )
         rating = (await session.execute(stmt)).scalar_one_or_none()
 
@@ -582,6 +815,7 @@ async def add_teammate_rating(
             rating = TeammateRating(
                 from_user_id=from_user_id,
                 to_user_id=to_user_id,
+                game=game,
                 has_aura=aura,
                 has_vibe=vibe,
             )
@@ -868,23 +1102,26 @@ async def reject_unban_request(request_id: int, admin_id: int) -> bool:
 
 async def get_profile_stats() -> dict[str, int]:
     async with session_maker() as session:
-        stmt = (
-            select(User.status, func.count())
-            .group_by(User.status)
-        )
-        rows = (await session.execute(stmt)).all()
-        counts = {status.value: count for status, count in rows}
-        active = counts.get(ProfileStatus.ACTIVE.value, 0)
-        hidden = counts.get(ProfileStatus.HIDDEN.value, 0)
-        banned = counts.get(ProfileStatus.BANNED.value, 0)
-        incomplete = counts.get(ProfileStatus.INCOMPLETE.value, 0)
+        user_rows = (await session.execute(
+            select(User.status, func.count()).group_by(User.status)
+        )).all()
+        user_counts = {status.value: count for status, count in user_rows}
+        game_rows = (await session.execute(
+            select(GameProfile.status, func.count()).group_by(GameProfile.status)
+        )).all()
+        game_counts = {status.value: count for status, count in game_rows}
+        banned = user_counts.get(ProfileStatus.BANNED.value, 0)
+        active = game_counts.get(ProfileStatus.ACTIVE.value, 0)
+        hidden = game_counts.get(ProfileStatus.HIDDEN.value, 0)
+        incomplete = game_counts.get(ProfileStatus.INCOMPLETE.value, 0)
+        registered = user_counts.get(ProfileStatus.ACTIVE.value, 0) + banned
         return {
             "active": active,
             "hidden": hidden,
             "banned": banned,
             "incomplete": incomplete,
-            "registered": active + hidden + banned,
-            "total": sum(counts.values()),
+            "registered": registered,
+            "total": registered + user_counts.get(ProfileStatus.INCOMPLETE.value, 0),
         }
 
 
@@ -917,7 +1154,7 @@ async def get_users_by_ids(user_ids: list[int]) -> dict[int, User]:
     if not user_ids:
         return {}
     async with session_maker() as session:
-        stmt = select(User).where(User.telegram_id.in_(user_ids))
+        stmt = select(User).options(*_user_load_options()).where(User.telegram_id.in_(user_ids))
         users = (await session.execute(stmt)).scalars().all()
         return {user.telegram_id: user for user in users}
 

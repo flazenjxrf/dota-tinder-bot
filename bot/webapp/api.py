@@ -18,6 +18,8 @@ from bot.database.requests import (
     add_report,
     add_swipe,
     add_teammate_rating,
+    copy_game_card,
+    delete_game_profile,
     delete_user_profile,
     get_like_messages_remaining_today,
     get_match_at_index,
@@ -27,6 +29,8 @@ from bot.database.requests import (
     get_teammate_rating,
     get_user_with_settings,
     has_user_consented,
+    is_game_searching,
+    is_person_registered,
     is_user_banned,
     record_user_consent,
     save_user_and_settings,
@@ -35,10 +39,21 @@ from bot.database.requests import (
     update_user_field,
     get_next_profile,
 )
+from bot.games import (
+    catalog_payload,
+    clamp_rating,
+    is_known_game,
+    normalize_game,
+    rating_kinds,
+    rating_spec,
+    valid_roles,
+)
 from bot.webapp.deps import CurrentBot, CurrentUser, WebAppUser
 from bot.webapp.notifications import notify_like_threshold, notify_like_with_message, notify_match
 from bot.webapp.schemas import (
+    CopyCardBody,
     FeedbackBody,
+    GameSwitchBody,
     ProfileUpdateBody,
     RateBody,
     RegisterBody,
@@ -48,29 +63,77 @@ from bot.webapp.schemas import (
     SwipeBody,
     UndoBody,
 )
-from bot.webapp.serializers import photo_url, serialize_profile
+from bot.webapp.serializers import photo_url, serialize_me_extras, serialize_profile
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-async def _require_active_user(user_id: int):
+async def _resolved_game(user_id: int, game: str | None) -> str:
+    if game and not is_known_game(game):
+        raise HTTPException(status_code=400, detail="Неизвестная игра")
+    if game:
+        await update_user_field(user_id, "last_active_game", normalize_game(game))
+        return normalize_game(game)
+    person = await get_user_with_settings(user_id)
+    return normalize_game(person.last_active_game if person else None)
+
+
+def _normalize_ratings(game: str, ratings: list | None, mmr: int | None = None) -> list[dict]:
+    items = []
+    if ratings:
+        for item in ratings:
+            kind = item.kind if hasattr(item, "kind") else item.get("kind")
+            value = item.value if hasattr(item, "value") else item.get("value")
+            if kind not in rating_kinds(game):
+                raise HTTPException(status_code=400, detail=f"Неизвестная шкала: {kind}")
+            items.append({"kind": kind, "value": clamp_rating(game, kind, int(value))})
+    elif mmr is not None and game == "dota":
+        items.append({"kind": "mmr", "value": clamp_rating(game, "mmr", int(mmr))})
+    return items
+
+
+async def _require_person(user_id: int):
     if await is_user_banned(user_id):
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     if not await has_user_consented(user_id):
         raise HTTPException(status_code=403, detail="Нужно принять согласие")
     user = await get_user_with_settings(user_id)
-    if not user or user.status == ProfileStatus.INCOMPLETE:
+    if not is_person_registered(user):
         raise HTTPException(status_code=400, detail="Сначала заполни анкету")
     return user
 
 
+async def _require_game_user(user_id: int, game: str | None, *, searching: bool = False):
+    resolved = await _resolved_game(user_id, game)
+    user = await _require_person(user_id)
+    user = await get_user_with_settings(user_id, resolved)
+    profile = user.profile_for(resolved) if user else None
+    if not profile or not profile.is_complete():
+        raise HTTPException(status_code=400, detail="Сначала заполни анкету этой игры")
+    if searching and not is_game_searching(user, resolved):
+        raise HTTPException(
+            status_code=400,
+            detail="Анкета скрыта. Покажи её в профиле, чтобы смотреть других.",
+        )
+    return user, resolved
+
+
+@router.get("/catalog")
+async def get_catalog():
+    return {"games": catalog_payload()}
+
+
 @router.get("/me")
-async def get_me(user: WebAppUser = CurrentUser):
+async def get_me(game: str | None = None, user: WebAppUser = CurrentUser):
     banned = await is_user_banned(user.id)
     consented = await has_user_consented(user.id)
     profile = await get_user_with_settings(user.id)
-    registered = bool(profile and profile.status != ProfileStatus.INCOMPLETE)
+    current_game = await _resolved_game(user.id, game) if (consented and not banned) else normalize_game(game)
+    if profile:
+        profile = await get_user_with_settings(user.id, current_game)
+    extras = serialize_me_extras(profile, current_game)
+    registered = extras["registered"]
 
     payload = {
         "telegram_id": user.id,
@@ -81,6 +144,11 @@ async def get_me(user: WebAppUser = CurrentUser):
         "registered": registered,
         "needs_consent": not consented,
         "needs_registration": consented and not registered,
+        "needs_game_profile": extras["needs_game_profile"] if consented and not banned else False,
+        "has_game_profile": extras["has_game_profile"],
+        "catalog": extras["catalog"],
+        "games": extras["games"],
+        "current_game": current_game,
         "pending_likes": 0,
         "profile": None,
     }
@@ -88,20 +156,28 @@ async def get_me(user: WebAppUser = CurrentUser):
     if banned:
         return payload
 
-    if registered and profile:
-        aura, vibe = await get_reputation_counts(user.id)
+    if registered and profile and extras["has_game_profile"]:
+        aura, vibe = await get_reputation_counts(user.id, current_game)
         payload["profile"] = serialize_profile(
             profile,
+            game=current_game,
             aura=aura,
             vibe=vibe,
             include_settings=True,
         )
-        payload["pending_likes"] = await get_pending_likes_count(user.id)
+        payload["pending_likes"] = await get_pending_likes_count(user.id, current_game)
         payload["like_messages_remaining"] = await get_like_messages_remaining_today(user.id)
         payload["like_message_limit"] = DAILY_LIKE_MESSAGE_LIMIT
         payload["like_message_max_length"] = LIKE_MESSAGE_MAX_LENGTH
 
     return payload
+
+
+@router.post("/me/game")
+async def switch_game(body: GameSwitchBody, user: WebAppUser = CurrentUser):
+    await _require_person(user.id)
+    game = await _resolved_game(user.id, body.game)
+    return await get_me(game=game, user=user)
 
 
 @router.post("/consent")
@@ -113,22 +189,17 @@ async def accept_consent(user: WebAppUser = CurrentUser):
 
 
 @router.get("/browse/next")
-async def browse_next(user: WebAppUser = CurrentUser):
-    me = await _require_active_user(user.id)
-    if me.status == ProfileStatus.HIDDEN:
-        raise HTTPException(
-            status_code=400,
-            detail="Анкета скрыта. Покажи её в профиле, чтобы смотреть других.",
-        )
-
-    profile = await get_next_profile(user.id)
+async def browse_next(game: str | None = None, user: WebAppUser = CurrentUser):
+    me, resolved = await _require_game_user(user.id, game, searching=True)
+    profile = await get_next_profile(user.id, resolved)
     if not profile:
-        return {"profile": None, "undo_available": False}
+        return {"profile": None, "undo_available": False, "game": resolved}
 
-    aura, vibe = await get_reputation_counts(profile.telegram_id)
+    aura, vibe = await get_reputation_counts(profile.telegram_id, resolved)
     return {
-        "profile": serialize_profile(profile, aura=aura, vibe=vibe),
+        "profile": serialize_profile(profile, game=resolved, aura=aura, vibe=vibe),
         "like_messages_remaining": await get_like_messages_remaining_today(user.id),
+        "game": resolved,
     }
 
 
@@ -138,15 +209,14 @@ async def swipe(
     user: WebAppUser = CurrentUser,
     bot: Bot = CurrentBot,
 ):
-    me = await _require_active_user(user.id)
-    if me.status == ProfileStatus.HIDDEN:
-        raise HTTPException(status_code=400, detail="Анкета скрыта")
+    me, resolved = await _require_game_user(user.id, body.game, searching=True)
 
     if body.to_user_id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя свайпнуть себя")
 
-    target = await get_user_with_settings(body.to_user_id)
-    if not target or target.status != ProfileStatus.ACTIVE:
+    target = await get_user_with_settings(body.to_user_id, resolved)
+    target_profile = target.profile_for(resolved) if target else None
+    if not target or not target_profile or target_profile.status != ProfileStatus.ACTIVE:
         raise HTTPException(status_code=404, detail="Анкета недоступна")
 
     message = (body.message or "").strip() or None
@@ -160,88 +230,92 @@ async def swipe(
             raise HTTPException(status_code=400, detail="Лимит лайков с сообщением на сегодня исчерпан")
 
     action = ActionType.LIKE if body.action == "like" else ActionType.DISLIKE
-    is_match = await add_swipe(user.id, body.to_user_id, action, message)
+    is_match = await add_swipe(user.id, body.to_user_id, action, message, resolved)
 
     if action == ActionType.LIKE and not is_match:
         if message:
             await notify_like_with_message(bot, body.to_user_id, me, message)
         else:
-            await notify_like_threshold(bot, body.to_user_id, user.id)
+            await notify_like_threshold(bot, body.to_user_id, user.id, resolved)
     elif is_match:
-        await notify_match(bot, user.id, body.to_user_id)
+        await notify_match(bot, user.id, body.to_user_id, resolved)
 
     return {
         "ok": True,
         "is_match": is_match,
-        "match_profile": serialize_profile(target, contact=True) if is_match else None,
+        "game": resolved,
+        "match_profile": serialize_profile(target, game=resolved, contact=True) if is_match else None,
     }
 
 
 @router.post("/swipe/undo")
 async def swipe_undo(body: UndoBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
-    ok = await undo_swipe(user.id, body.to_user_id)
+    _me, resolved = await _require_game_user(user.id, body.game)
+    ok = await undo_swipe(user.id, body.to_user_id, resolved)
     if not ok:
         raise HTTPException(status_code=404, detail="Нечего отменять")
     return {"ok": True}
 
 
 @router.get("/likes")
-async def get_likes(index: int = 0, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
-    liker, total, like_message = await get_pending_like_at_index(user.id, index)
+async def get_likes(index: int = 0, game: str | None = None, user: WebAppUser = CurrentUser):
+    _me, resolved = await _require_game_user(user.id, game)
+    liker, total, like_message = await get_pending_like_at_index(user.id, index, resolved)
     if not liker:
-        return {"profile": None, "total": 0, "index": 0, "message": None}
+        return {"profile": None, "total": 0, "index": 0, "message": None, "game": resolved}
 
     actual = min(max(index, 0), total - 1)
-    aura, vibe = await get_reputation_counts(liker.telegram_id)
+    aura, vibe = await get_reputation_counts(liker.telegram_id, resolved)
     return {
-        "profile": serialize_profile(liker, aura=aura, vibe=vibe),
+        "profile": serialize_profile(liker, game=resolved, aura=aura, vibe=vibe),
         "total": total,
         "index": actual,
         "message": like_message,
+        "game": resolved,
     }
 
 
 @router.get("/matches")
-async def get_matches(index: int = 0, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
-    partner, total = await get_match_at_index(user.id, index)
+async def get_matches(index: int = 0, game: str | None = None, user: WebAppUser = CurrentUser):
+    _me, resolved = await _require_game_user(user.id, game)
+    partner, total = await get_match_at_index(user.id, index, resolved)
     if not partner:
-        return {"profile": None, "total": 0, "index": 0, "rating": None}
+        return {"profile": None, "total": 0, "index": 0, "rating": None, "game": resolved}
 
     actual = min(max(index, 0), total - 1)
-    aura, vibe = await get_reputation_counts(partner.telegram_id)
-    has_aura, has_vibe = await get_teammate_rating(user.id, partner.telegram_id)
+    aura, vibe = await get_reputation_counts(partner.telegram_id, resolved)
+    has_aura, has_vibe = await get_teammate_rating(user.id, partner.telegram_id, resolved)
     return {
-        "profile": serialize_profile(partner, aura=aura, vibe=vibe, contact=True),
+        "profile": serialize_profile(partner, game=resolved, aura=aura, vibe=vibe, contact=True),
         "total": total,
         "index": actual,
         "rating": {"has_aura": has_aura, "has_vibe": has_vibe},
+        "game": resolved,
     }
 
 
 @router.post("/matches/rate")
 async def rate_match(body: RateBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
+    _me, resolved = await _require_game_user(user.id, body.game)
     error = await add_teammate_rating(
         user.id,
         body.to_user_id,
         aura=body.kind == "aura",
         vibe=body.kind == "vibe",
+        game=resolved,
     )
     if error:
         raise HTTPException(status_code=400, detail=error)
-    has_aura, has_vibe = await get_teammate_rating(user.id, body.to_user_id)
+    has_aura, has_vibe = await get_teammate_rating(user.id, body.to_user_id, resolved)
     return {"ok": True, "rating": {"has_aura": has_aura, "has_vibe": has_vibe}}
 
 
 @router.post("/report")
 async def report_user(body: ReportBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
+    _me, resolved = await _require_game_user(user.id, body.game)
     reason = ReportReason(body.reason)
     report_id = await add_report(user.id, body.to_user_id, reason, body.comment)
-    await add_swipe(user.id, body.to_user_id, ActionType.DISLIKE)
+    await add_swipe(user.id, body.to_user_id, ActionType.DISLIKE, game=resolved)
     if report_id is None:
         return {"ok": True, "duplicate": True}
     return {"ok": True, "id": report_id}
@@ -257,48 +331,96 @@ async def feedback(body: FeedbackBody, user: WebAppUser = CurrentUser):
 
 @router.patch("/profile")
 async def update_profile(body: ProfileUpdateBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
-    data = body.model_dump(exclude_unset=True)
-    if "positions" in data and data["positions"] is not None:
-        positions = [p for p in data["positions"] if p in (1, 2, 3, 4)]
-        if not positions:
+    _me, resolved = await _require_game_user(user.id, body.game)
+    payload = body.model_dump(exclude_unset=True)
+    payload.pop("game", None)
+    roles = valid_roles(resolved, payload.get("roles") or payload.get("positions"))
+    if "roles" in payload or "positions" in payload:
+        if not roles:
             raise HTTPException(status_code=400, detail="Выбери хотя бы одну роль")
-        data["positions"] = positions
+        payload["roles"] = roles
+    ratings = _normalize_ratings(resolved, body.ratings, body.mmr)
+    if ratings:
+        payload["ratings"] = ratings
 
-    for field, value in data.items():
-        await update_user_field(user.id, field, value)
+    person_fields = {key: payload[key] for key in ("name", "age", "city") if key in payload}
+    game_fields = {
+        key: payload[key]
+        for key in ("roles", "ratings", "bio", "photo_file_id", "mmr", "positions")
+        if key in payload
+    }
+    for field, value in person_fields.items():
+        await update_user_field(user.id, field, value, resolved)
+    if game_fields:
+        game_fields["game"] = resolved
+        await save_user_and_settings(user.id, user.username, game_fields)
 
-    profile = await get_user_with_settings(user.id)
-    aura, vibe = await get_reputation_counts(user.id)
-    return serialize_profile(profile, aura=aura, vibe=vibe, include_settings=True)
+    profile = await get_user_with_settings(user.id, resolved)
+    aura, vibe = await get_reputation_counts(user.id, resolved)
+    return serialize_profile(profile, game=resolved, aura=aura, vibe=vibe, include_settings=True)
 
 
 @router.patch("/profile/settings")
 async def update_settings(body: SettingsUpdateBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
+    _me, resolved = await _require_game_user(user.id, body.game)
     data = body.model_dump(exclude_unset=True)
-    if "wanted_positions" in data and data["wanted_positions"] is not None:
-        data["wanted_positions"] = [p for p in data["wanted_positions"] if p in (1, 2, 3, 4)] or None
+    data.pop("game", None)
+    raw_roles = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
+    if raw_roles is not None:
+        data["wanted_roles"] = valid_roles(resolved, raw_roles) or None
+        data.pop("wanted_positions", None)
+    if data.get("wanted_rating_kind") and data["wanted_rating_kind"] not in rating_kinds(resolved):
+        raise HTTPException(status_code=400, detail="Неизвестная шкала поиска")
+    if "min_mmr" in data and "min_skill" not in data:
+        data["min_skill"] = data.pop("min_mmr")
+    if "max_mmr" in data and "max_skill" not in data:
+        data["max_skill"] = data.pop("max_mmr")
 
     for field, value in data.items():
-        await update_settings_field(user.id, field, value)
+        await update_settings_field(user.id, field, value, resolved)
 
-    profile = await get_user_with_settings(user.id)
-    aura, vibe = await get_reputation_counts(user.id)
-    return serialize_profile(profile, aura=aura, vibe=vibe, include_settings=True)
+    profile = await get_user_with_settings(user.id, resolved)
+    aura, vibe = await get_reputation_counts(user.id, resolved)
+    return serialize_profile(profile, game=resolved, aura=aura, vibe=vibe, include_settings=True)
 
 
 @router.post("/profile/status")
 async def set_profile_status(body: StatusUpdateBody, user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
+    _me, resolved = await _require_game_user(user.id, body.game)
     new_status = ProfileStatus.ACTIVE if body.status == "active" else ProfileStatus.HIDDEN
-    await update_user_field(user.id, "status", new_status)
-    return {"ok": True, "status": new_status.value}
+    await update_user_field(user.id, "status", new_status, resolved)
+    return {"ok": True, "status": new_status.value, "game": resolved}
+
+
+@router.post("/profile/copy")
+async def copy_profile_card(body: CopyCardBody, user: WebAppUser = CurrentUser):
+    await _require_person(user.id)
+    if not is_known_game(body.from_game):
+        raise HTTPException(status_code=400, detail="Неизвестная игра")
+    updated = await copy_game_card(
+        user.id,
+        body.from_game,
+        body.to_games,
+        copy_bio=body.bio,
+        copy_photo=body.photo,
+    )
+    return {"ok": True, "updated": updated}
+
+
+@router.delete("/games/{game}")
+async def remove_game_profile(game: str, user: WebAppUser = CurrentUser):
+    await _require_person(user.id)
+    if not is_known_game(game):
+        raise HTTPException(status_code=400, detail="Неизвестная игра")
+    ok = await delete_game_profile(user.id, game)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Анкета этой игры не найдена")
+    return {"ok": True}
 
 
 @router.delete("/profile")
 async def remove_profile(user: WebAppUser = CurrentUser):
-    await _require_active_user(user.id)
+    await _require_person(user.id)
     ok = await delete_user_profile(user.id)
     if not ok:
         raise HTTPException(status_code=404, detail="Анкета не найдена")
@@ -311,33 +433,72 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     if not await has_user_consented(user.id):
         raise HTTPException(status_code=403, detail="Нужно принять согласие")
+    if not is_known_game(body.game):
+        raise HTTPException(status_code=400, detail="Неизвестная игра")
 
-    positions = [p for p in body.positions if p in (1, 2, 3, 4)]
-    if not positions:
+    game = normalize_game(body.game)
+    existing = await get_user_with_settings(user.id, game)
+    person_exists = is_person_registered(existing)
+
+    name = (body.name or (existing.name if existing else "")).strip()
+    age = body.age if body.age is not None else (existing.age if existing else None)
+    city = (body.city or (existing.city if existing else "")).strip()
+    if not person_exists and (not name or age is None or not city):
+        raise HTTPException(status_code=400, detail="Заполни имя, возраст и город")
+
+    roles = valid_roles(game, body.roles or body.positions)
+    if not roles:
         raise HTTPException(status_code=400, detail="Выбери хотя бы одну роль")
 
-    wanted = [p for p in (body.wanted_positions or []) if p in (1, 2, 3, 4)]
+    ratings = _normalize_ratings(game, body.ratings, body.mmr)
+    if body.copy_card_from and existing:
+        source = existing.profile_for(body.copy_card_from)
+        if source:
+            photo = body.photo_file_id or source.photo_file_id
+            bio = body.bio if body.bio else (source.bio or "")
+        else:
+            photo = body.photo_file_id
+            bio = body.bio or ""
+    else:
+        photo = body.photo_file_id
+        bio = body.bio or ""
+        if existing:
+            current = existing.profile_for(game)
+            photo = photo or (current.photo_file_id if current else None)
+            bio = bio if body.bio else ((current.bio if current else "") or "")
+
+    if not photo:
+        raise HTTPException(status_code=400, detail="Нужно фото")
+    if not ratings:
+        raise HTTPException(status_code=400, detail="Укажи рейтинг")
+
+    wanted = valid_roles(game, body.wanted_roles or body.wanted_positions)
+    wanted_kind = body.wanted_rating_kind or (ratings[0]["kind"] if ratings else None)
+    if wanted_kind and wanted_kind not in rating_kinds(game):
+        raise HTTPException(status_code=400, detail="Неизвестная шкала поиска")
 
     await save_user_and_settings(
         user.id,
         user.username,
         {
-            "name": body.name.strip(),
-            "age": body.age,
-            "city": body.city.strip(),
-            "mmr": body.mmr,
-            "positions": positions,
-            "bio": (body.bio or "").strip(),
-            "photo_id": body.photo_file_id,
-            "wanted_positions": wanted,
+            "game": game,
+            "name": name,
+            "age": age,
+            "city": city,
+            "roles": roles,
+            "ratings": ratings,
+            "bio": bio.strip(),
+            "photo_id": photo,
+            "wanted_roles": wanted or None,
+            "wanted_rating_kind": wanted_kind,
             "min_age": body.min_age,
             "max_age": body.max_age,
-            "min_mmr": body.min_mmr,
-            "max_mmr": body.max_mmr,
+            "min_skill": body.min_skill if body.min_skill is not None else body.min_mmr,
+            "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
         },
     )
-    profile = await get_user_with_settings(user.id)
-    return serialize_profile(profile, include_settings=True)
+    profile = await get_user_with_settings(user.id, game)
+    return serialize_profile(profile, game=game, include_settings=True)
 
 
 @router.post("/photos/upload")

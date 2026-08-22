@@ -126,6 +126,129 @@ async def init_models():
             "CREATE INDEX IF NOT EXISTS idx_teammate_ratings_to_user_id "
             "ON teammate_ratings (to_user_id)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_game VARCHAR(20) DEFAULT 'dota'"
+        ))
+        await conn.execute(text(
+            "UPDATE users SET last_active_game = 'dota' WHERE last_active_game IS NULL OR last_active_game = ''"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
+        ))
+        await conn.execute(text(
+            "UPDATE swipes SET game = 'dota' WHERE game IS NULL OR game = ''"
+        ))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE swipes DROP CONSTRAINT IF EXISTS uq_swipe_from_to;
+            EXCEPTION WHEN others THEN NULL;
+            END $$;
+        """))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE swipes ADD CONSTRAINT uq_swipe_from_to_game
+                UNIQUE (from_user_id, to_user_id, game);
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
+        """))
+        await conn.execute(text(
+            "ALTER TABLE teammate_ratings ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
+        ))
+        await conn.execute(text(
+            "UPDATE teammate_ratings SET game = 'dota' WHERE game IS NULL OR game = ''"
+        ))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE teammate_ratings DROP CONSTRAINT IF EXISTS uq_teammate_rating_from_to;
+            EXCEPTION WHEN others THEN NULL;
+            END $$;
+        """))
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE teammate_ratings ADD CONSTRAINT uq_teammate_rating_from_to_game
+                UNIQUE (from_user_id, to_user_id, game);
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
+        """))
+        await _migrate_legacy_dota_profiles(conn)
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()
+
+
+async def _migrate_legacy_dota_profiles(conn) -> None:
+    """Переносит mmr/роли/фото/bio и фильтры со старых колонок users в игровые анкеты."""
+    users_has_mmr = await conn.execute(text(
+        "SELECT EXISTS ("
+        "  SELECT 1 FROM information_schema.columns "
+        "  WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'mmr'"
+        ")"
+    ))
+    if not users_has_mmr.scalar():
+        return
+
+    await conn.execute(text("""
+        INSERT INTO game_profiles (user_id, game, bio, photo_file_id, roles, status)
+        SELECT
+            u.telegram_id,
+            'dota',
+            u.bio,
+            u.photo_file_id,
+            COALESCE(u.positions, ARRAY[]::integer[]),
+            CASE
+                WHEN u.status::text IN ('HIDDEN', 'hidden') THEN 'HIDDEN'
+                WHEN u.status::text IN ('ACTIVE', 'active', 'BANNED', 'banned') THEN 'ACTIVE'
+                ELSE 'INCOMPLETE'
+            END::profilestatus
+        FROM users u
+        WHERE COALESCE(u.name, '') <> ''
+          AND NOT EXISTS (
+              SELECT 1 FROM game_profiles gp
+              WHERE gp.user_id = u.telegram_id AND gp.game = 'dota'
+          )
+    """))
+    await conn.execute(text("""
+        INSERT INTO game_ratings (profile_id, kind, value)
+        SELECT gp.id, 'mmr', COALESCE(u.mmr, 0)
+        FROM game_profiles gp
+        JOIN users u ON u.telegram_id = gp.user_id
+        WHERE gp.game = 'dota'
+          AND NOT EXISTS (
+              SELECT 1 FROM game_ratings gr
+              WHERE gr.profile_id = gp.id AND gr.kind = 'mmr'
+          )
+    """))
+
+    settings_exists = await conn.execute(text(
+        "SELECT EXISTS ("
+        "  SELECT 1 FROM information_schema.tables "
+        "  WHERE table_schema = 'public' AND table_name = 'search_settings'"
+        ")"
+    ))
+    if settings_exists.scalar():
+        await conn.execute(text("""
+            INSERT INTO game_search_settings (
+                game_profile_id, min_age, max_age, wanted_roles,
+                wanted_rating_kind, min_skill, max_skill
+            )
+            SELECT
+                gp.id,
+                s.min_age,
+                s.max_age,
+                s.wanted_positions,
+                'mmr',
+                s.min_mmr,
+                s.max_mmr
+            FROM search_settings s
+            JOIN game_profiles gp ON gp.user_id = s.user_id AND gp.game = 'dota'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM game_search_settings gss
+                WHERE gss.game_profile_id = gp.id
+            )
+        """))
+
+    await conn.execute(text("""
+        UPDATE users
+        SET status = 'ACTIVE'::profilestatus
+        WHERE status::text IN ('HIDDEN', 'hidden')
+    """))

@@ -4,8 +4,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
-from bot.database.requests import add_report, add_swipe, get_user_with_settings
-from bot.database.models import ActionType, ProfileStatus, ReportReason
+from bot.database.requests import add_report, add_swipe, get_user_with_settings, is_game_searching
+from bot.database.models import ActionType, ReportReason
 from bot.keyboards.inline import (
     ReportCallback,
     ReportReasonCallback,
@@ -30,7 +30,7 @@ async def _check_hidden_profile(user_id: int, context: str) -> bool:
     if context != "swipe":
         return True
     user = await get_user_with_settings(user_id)
-    return bool(user and user.status != ProfileStatus.HIDDEN)
+    return is_game_searching(user)
 
 
 async def _continue_after_report(

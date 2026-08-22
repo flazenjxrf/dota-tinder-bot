@@ -6,6 +6,34 @@ const POSITIONS = [
   { id: 4, label: "Саппорт" },
 ];
 
+function catalog() {
+  return state.me?.catalog || [];
+}
+
+function currentGame() {
+  return state.me?.current_game || state.register?.game || "dota";
+}
+
+function gameSpec(id = currentGame()) {
+  return catalog().find((item) => item.id === id) || catalog()[0] || null;
+}
+
+function rolesOf(id = currentGame()) {
+  return gameSpec(id)?.roles || POSITIONS;
+}
+
+function ratingOf(kind, id = currentGame()) {
+  return (gameSpec(id)?.ratings || []).find((item) => item.kind === kind) || null;
+}
+
+function formatSkill(spec, value) {
+  if (!spec) return String(value);
+  const option = (spec.options || []).find((item) => Number(item.id) === Number(value));
+  if (option) return option.label;
+  if (spec.kind === "faceit") return `lvl ${value}`;
+  return Number(value).toLocaleString("ru-RU");
+}
+
 const AGE_MIN = 12;
 const AGE_MAX = 60;
 
@@ -36,7 +64,7 @@ function formatMmr(value) {
   return Number(value).toLocaleString("ru-RU");
 }
 
-function sliderField({ id, label, min, max, step = 1, value, format = (v) => String(v) }) {
+function sliderField({ id, label, min, max, step = 1, value, format = (v) => String(v), fmt = "" }) {
   const fallback = Math.round((min + max) / 2);
   let v = value === "" || value == null ? fallback : Number(value);
   if (Number.isNaN(v)) v = fallback;
@@ -48,7 +76,7 @@ function sliderField({ id, label, min, max, step = 1, value, format = (v) => Str
         <label>${label}</label>
         <strong class="slider-val" data-for="${id}">${format(v)}</strong>
       </div>
-      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" />
+      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" data-fmt="${escapeHtml(fmt)}" />
     </div>`;
 }
 
@@ -62,6 +90,7 @@ function dualSliderField({
   minValue,
   maxValue,
   format = (v) => String(v),
+  fmt = "",
 }) {
   let lo = minValue === "" || minValue == null ? min : Number(minValue);
   let hi = maxValue === "" || maxValue == null ? max : Number(maxValue);
@@ -80,27 +109,29 @@ function dualSliderField({
         <label>${label}</label>
         <strong><span data-for="${minId}">${format(lo)}</span>–<span data-for="${maxId}">${format(hi)}</span></strong>
       </div>
-      <input type="range" id="${minId}" min="${min}" max="${max}" step="${step}" value="${lo}" aria-label="Мин. ${label}" />
-      <input type="range" id="${maxId}" min="${min}" max="${max}" step="${step}" value="${hi}" aria-label="Макс. ${label}" />
+      <input type="range" id="${minId}" min="${min}" max="${max}" step="${step}" value="${lo}" data-fmt="${escapeHtml(fmt)}" aria-label="Мин. ${label}" />
+      <input type="range" id="${maxId}" min="${min}" max="${max}" step="${step}" value="${hi}" data-fmt="${escapeHtml(fmt)}" aria-label="Макс. ${label}" />
     </div>`;
+}
+
+function sliderLabel(input, value) {
+  const fmt = input.dataset.fmt || input.id;
+  if (fmt === "age" || input.id.includes("age")) return formatAge(value);
+  if (fmt === "mmr" || input.id.includes("mmr")) return formatMmr(value);
+  const spec = ratingOf(fmt);
+  if (spec) return formatSkill(spec, value);
+  return String(value);
 }
 
 function bindSliders(root) {
   root.querySelectorAll('input[type="range"]').forEach((input) => {
     const updateLabel = () => {
       root.querySelectorAll(`[data-for="${input.id}"]`).forEach((el) => {
-        if (input.id.includes("mmr")) el.textContent = formatMmr(input.value);
-        else if (input.id.includes("age")) el.textContent = formatAge(input.value);
-        else el.textContent = input.value;
+        el.textContent = sliderLabel(input, input.value);
       });
     };
     input.addEventListener("input", () => {
       const dual = input.closest("[data-dual]");
-      const fmt = (id, val) => {
-        if (id.includes("mmr")) return formatMmr(val);
-        if (id.includes("age")) return formatAge(val);
-        return String(val);
-      };
       if (dual) {
         const [minId, maxId] = dual.dataset.dual.split("|");
         const minEl = root.querySelector(`#${minId}`);
@@ -117,10 +148,10 @@ function bindSliders(root) {
             lo = hi;
           }
           root.querySelectorAll(`[data-for="${minId}"]`).forEach((el) => {
-            el.textContent = fmt(minId, lo);
+            el.textContent = sliderLabel(minEl, lo);
           });
           root.querySelectorAll(`[data-for="${maxId}"]`).forEach((el) => {
-            el.textContent = fmt(maxId, hi);
+            el.textContent = sliderLabel(maxEl, hi);
           });
           return;
         }
@@ -159,19 +190,24 @@ const state = {
   settingsForm: null,
   register: {
     step: 0,
+    mode: "full",
+    game: "dota",
+    copy_from: "",
     name: "",
     age: "18",
     city: "",
-    mmr: "3000",
-    positions: [],
+    roles: [],
+    rating_kinds: ["mmr"],
+    ratings: { mmr: "3000" },
     bio: "",
     photo_file_id: "",
     photo_preview: "",
-    wanted_positions: [],
+    wanted_roles: [],
+    wanted_rating_kind: "mmr",
     min_age: AGE_MIN,
     max_age: AGE_MAX,
-    min_mmr: MMR_MIN,
-    max_mmr: MMR_MAX,
+    min_skill: MMR_MIN,
+    max_skill: MMR_MAX,
   },
 };
 
@@ -256,8 +292,12 @@ function profileCard(profile, extraHtml = "") {
   const reps = [];
   if (profile.aura) reps.push(`🔥 ${profile.aura}`);
   if (profile.vibe) reps.push(`💜 ${profile.vibe}`);
-  const roles = (profile.position_labels || []).map((r) => `<span class="chip">${escapeHtml(r)}</span>`).join("");
-  const src = escapeHtml(profile.photo_url);
+  const roleNames = profile.role_labels || profile.position_labels || [];
+  const roles = roleNames.map((r) => `<span class="chip">${escapeHtml(r)}</span>`).join("");
+  const ratings = (profile.ratings || []).map((item) => `<span class="chip accent">🏆 ${escapeHtml(item.text)}</span>`).join("");
+  const fallbackRating = !ratings && profile.mmr != null ? `<span class="chip accent">🏆 ${profile.mmr}</span>` : "";
+  const src = escapeHtml(profile.photo_url || "");
+  const gameLabel = profile.game_label ? `<span class="chip">${escapeHtml(profile.game_label)}</span>` : "";
   return `
     <article class="card">
       <div class="card-photo">
@@ -266,8 +306,9 @@ function profileCard(profile, extraHtml = "") {
       <div class="card-body">
         <h2>${contactNameHtml(profile)}, ${profile.age}</h2>
         <div class="meta">
+          ${gameLabel}
           <span class="chip">📍 ${escapeHtml(profile.city)}</span>
-          <span class="chip accent">🏆 ${profile.mmr}</span>
+          ${ratings || fallbackRating}
           ${reps.length ? `<span class="chip">${reps.join(" · ")}</span>` : ""}
         </div>
         <div class="meta">${roles}</div>
@@ -315,8 +356,56 @@ function shell(_title, body, { showNav = true } = {}) {
   `;
 }
 
-async function refreshMe() {
-  state.me = await api("/api/me");
+async function refreshMe(game = null) {
+  const query = game || state.me?.current_game;
+  state.me = await api(query ? `/api/me?game=${encodeURIComponent(query)}` : "/api/me");
+}
+
+function gameSwitchHtml() {
+  const games = catalog();
+  if (!games.length) return "";
+  const known = state.me?.games || [];
+  return `
+    <div class="game-switch">
+      ${games
+        .map((item) => {
+          const info = known.find((row) => row.id === item.id);
+          const on = currentGame() === item.id;
+          const extra = info?.has_profile ? "" : "<span>+</span>";
+          return `<button type="button" data-game="${item.id}" class="${on ? "on" : ""}">${escapeHtml(item.short)}${extra}</button>`;
+        })
+        .join("")}
+    </div>`;
+}
+
+function bindGameSwitch(root) {
+  root.querySelectorAll(".game-switch [data-game]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const game = btn.dataset.game;
+      if (game === currentGame()) return;
+      try {
+        state.me = await api("/api/me/game", {
+          method: "POST",
+          body: JSON.stringify({ game }),
+        });
+        state.browse = null;
+        state.likes = null;
+        state.matches = null;
+        state.likesIndex = 0;
+        state.matchesIndex = 0;
+        state.profileView = "main";
+        state.edit = null;
+        state.settingsForm = null;
+        if (state.me.needs_game_profile) {
+          state.register = emptyRegister(game, "game");
+        }
+        haptic("light");
+        render();
+      } catch (e) {
+        toast(e.message);
+      }
+    });
+  });
 }
 
 function bindNav(root) {
@@ -362,15 +451,17 @@ function renderConsent() {
   };
 }
 
-function posButtons(selected, key) {
+function posButtons(selected, key, roles = rolesOf()) {
   return `
     <div class="pos-grid" data-pos="${key}">
-      ${POSITIONS.map(
-        (p) => `
+      ${roles
+        .map(
+          (p) => `
         <button type="button" data-id="${p.id}" class="${selected.includes(p.id) ? "on" : ""}">
           ${p.label}
         </button>`
-      ).join("")}
+        )
+        .join("")}
     </div>
   `;
 }
@@ -387,72 +478,309 @@ function bindPos(root, key, listRef) {
   });
 }
 
-function renderRegister() {
-  const r = state.register;
-  const steps = [
-    () => `
-      <div class="panel stack">
-        <h2>Имя</h2>
-        <div class="field"><input id="name" maxlength="50" value="${escapeHtml(r.name)}" placeholder="Как тебя зовут" /></div>
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    () => `
-      <div class="panel stack">
-        <h2>Возраст</h2>
-        ${sliderField({
-          id: "age",
-          label: "Твой возраст",
-          min: AGE_MIN,
-          max: AGE_MAX,
-          value: r.age || 18,
-          format: formatAge,
-        })}
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    () => `
-      <div class="panel stack">
-        <h2>Город</h2>
-        <div class="field"><input id="city" maxlength="50" value="${escapeHtml(r.city)}" placeholder="Москва" /></div>
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    () => `
+function emptyRegister(game = "dota", mode = "full") {
+  const spec = gameSpec(game) || { ratings: [], multi_rating: false };
+  const ratings = {};
+  for (const item of spec.ratings || []) ratings[item.kind] = String(item.default ?? item.min);
+  const first = spec.ratings?.[0];
+  const person = state.me?.profile;
+  const sources = (state.me?.games || []).filter((item) => item.has_profile);
+  return {
+    step: 0,
+    mode,
+    game,
+    copy_from: "",
+    name: person?.name || state.register?.name || "",
+    age: String(person?.age || state.register?.age || 18),
+    city: person?.city || state.register?.city || "",
+    roles: [],
+    rating_kinds: spec.multi_rating ? [] : (spec.ratings || []).map((item) => item.kind),
+    ratings,
+    bio: "",
+    photo_file_id: "",
+    photo_preview: "",
+    wanted_roles: [],
+    wanted_rating_kind: first?.kind || "",
+    min_age: AGE_MIN,
+    max_age: AGE_MAX,
+    min_skill: first?.min ?? 0,
+    max_skill: first?.max ?? 0,
+    _sources: sources,
+  };
+}
+
+function applyCopySource(r, gameId) {
+  const source = (state.me?.games || []).find((item) => item.id === gameId);
+  r.copy_from = gameId;
+  if (!source) return;
+  r.bio = source.bio || "";
+  r.photo_file_id = source.photo_file_id || "";
+  r.photo_preview = source.photo_url || "";
+}
+
+function registerSteps(r) {
+  const spec = gameSpec(r.game) || { ratings: [], roles: POSITIONS, multi_rating: false, label: "игра" };
+  const steps = [];
+  if (r.mode === "full") {
+    steps.push({
+      id: "game",
+      render: () => `
+        <div class="panel stack">
+          <h2>Игра</h2>
+          <p class="muted">Потом можно добавить ещё одну анкету</p>
+          <div class="pos-grid" data-pick="game">
+            ${catalog()
+              .map(
+                (item) => `
+              <button type="button" data-id="${item.id}" class="${r.game === item.id ? "on" : ""}">${escapeHtml(item.label)}</button>`
+              )
+              .join("")}
+          </div>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      bind: (root) => {
+        root.querySelectorAll("[data-pick=game] button").forEach((btn) => {
+          btn.onclick = () => {
+            const next = emptyRegister(btn.dataset.id, "full");
+            next.name = r.name;
+            next.age = r.age;
+            next.city = r.city;
+            next.step = r.step;
+            state.register = next;
+            render();
+          };
+        });
+      },
+    });
+    steps.push({
+      id: "name",
+      render: () => `
+        <div class="panel stack">
+          <h2>Имя</h2>
+          <div class="field"><input id="name" maxlength="50" value="${escapeHtml(r.name)}" placeholder="Как тебя зовут" /></div>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      validate: (root) => {
+        r.name = root.querySelector("#name").value.trim();
+        if (!r.name) throw new Error("Введи имя");
+      },
+    });
+    steps.push({
+      id: "age",
+      render: () => `
+        <div class="panel stack">
+          <h2>Возраст</h2>
+          ${sliderField({
+            id: "age",
+            label: "Твой возраст",
+            min: AGE_MIN,
+            max: AGE_MAX,
+            value: r.age || 18,
+            format: formatAge,
+            fmt: "age",
+          })}
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      validate: (root) => {
+        r.age = String(readRangeValue(root, "age"));
+      },
+    });
+    steps.push({
+      id: "city",
+      render: () => `
+        <div class="panel stack">
+          <h2>Город</h2>
+          <div class="field"><input id="city" maxlength="50" value="${escapeHtml(r.city)}" placeholder="Москва" /></div>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      validate: (root) => {
+        r.city = root.querySelector("#city").value.trim();
+        if (!r.city) throw new Error("Укажи город");
+      },
+    });
+  } else if ((r._sources || []).length) {
+    steps.push({
+      id: "copy",
+      render: () => `
+        <div class="panel stack">
+          <h2>${escapeHtml(spec.label)}</h2>
+          <p class="muted">Можно взять фото и описание из другой анкеты</p>
+          ${(r._sources || [])
+            .map(
+              (item) => `
+            <button type="button" class="btn ${r.copy_from === item.id ? "btn-primary" : "btn-ghost"} btn-block" data-copy="${item.id}">
+              Взять из ${escapeHtml(item.label)}
+            </button>`
+            )
+            .join("")}
+          <button type="button" class="btn btn-ghost btn-block" data-copy="">Заполнить заново</button>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      bind: (root) => {
+        root.querySelectorAll("[data-copy]").forEach((btn) => {
+          btn.onclick = () => {
+            r.copy_from = btn.dataset.copy || "";
+            if (r.copy_from) applyCopySource(r, r.copy_from);
+            else {
+              r.bio = "";
+              r.photo_file_id = "";
+              r.photo_preview = "";
+            }
+            render();
+          };
+        });
+      },
+    });
+  }
+
+  steps.push({
+    id: "roles",
+    render: () => `
       <div class="panel stack">
         <h2>Твои роли</h2>
-        ${posButtons(r.positions, "positions")}
+        ${posButtons(r.roles, "roles", spec.roles)}
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
-    () => `
-      <div class="panel stack">
-        <h2>MMR</h2>
-        ${sliderField({
-          id: "mmr",
-          label: "Твой MMR",
-          min: MMR_MIN,
-          max: MMR_MAX,
-          step: MMR_STEP,
-          value: r.mmr || 3000,
-          format: formatMmr,
-        })}
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    () => `
+    bind: (root) => bindPos(root, "roles", r.roles),
+    validate: () => {
+      if (!r.roles.length) throw new Error("Выбери роли");
+    },
+  });
+
+  if (spec.multi_rating) {
+    steps.push({
+      id: "queues",
+      render: () => `
+        <div class="panel stack">
+          <h2>Где играешь</h2>
+          <p class="muted">Можно выбрать несколько — рейтинг спросим отдельно</p>
+          <div class="pos-grid" data-pos="queues">
+            ${spec.ratings
+              .map(
+                (item) => `
+              <button type="button" data-kind="${item.kind}" class="${r.rating_kinds.includes(item.kind) ? "on" : ""}">${escapeHtml(item.label)}</button>`
+              )
+              .join("")}
+          </div>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      bind: (root) => {
+        root.querySelectorAll("[data-pos=queues] button").forEach((btn) => {
+          btn.onclick = () => {
+            const kind = btn.dataset.kind;
+            const idx = r.rating_kinds.indexOf(kind);
+            if (idx >= 0) r.rating_kinds.splice(idx, 1);
+            else r.rating_kinds.push(kind);
+            btn.classList.toggle("on", r.rating_kinds.includes(kind));
+          };
+        });
+      },
+      validate: () => {
+        if (!r.rating_kinds.length) throw new Error("Выбери, где играешь");
+        if (!r.wanted_rating_kind || !r.rating_kinds.includes(r.wanted_rating_kind)) {
+          r.wanted_rating_kind = r.rating_kinds[0];
+        }
+      },
+    });
+  }
+
+  steps.push({
+    id: "ratings",
+    render: () => {
+      const kinds = r.rating_kinds.length ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
+      return `
+        <div class="panel stack">
+          <h2>Рейтинг</h2>
+          ${kinds
+            .map((kind) => {
+              const item = ratingOf(kind, r.game);
+              if (!item) return "";
+              if (item.options?.length) {
+                return `
+                  <div class="field">
+                    <label>${escapeHtml(item.label)}</label>
+                    <select id="rating-${item.kind}">
+                      ${item.options
+                        .map(
+                          (opt) => `
+                        <option value="${opt.id}" ${Number(r.ratings[item.kind]) === Number(opt.id) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
+                        )
+                        .join("")}
+                    </select>
+                  </div>`;
+              }
+              return sliderField({
+                id: `rating-${item.kind}`,
+                label: item.label,
+                min: item.min,
+                max: item.max,
+                step: item.step,
+                value: r.ratings[item.kind] ?? item.default,
+                format: (v) => formatSkill(item, v),
+                fmt: item.kind,
+              });
+            })
+            .join("")}
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`;
+    },
+    validate: (root) => {
+      const kinds = r.rating_kinds.length ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
+      for (const kind of kinds) {
+        const field = root.querySelector(`#rating-${kind}`);
+        if (!field) continue;
+        r.ratings[kind] = String(field.value);
+      }
+    },
+  });
+
+  steps.push({
+    id: "bio",
+    render: () => `
       <div class="panel stack">
         <h2>О себе</h2>
+        <p class="muted">Только для анкеты ${escapeHtml(spec.label)}</p>
         <div class="field"><textarea id="bio" maxlength="500">${escapeHtml(r.bio)}</textarea></div>
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
-    () => `
+    validate: (root) => {
+      r.bio = root.querySelector("#bio").value.trim();
+    },
+  });
+
+  steps.push({
+    id: "photo",
+    render: () => `
       <div class="panel stack">
         <h2>Фото</h2>
-        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${r.photo_preview}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
+        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(r.photo_preview)}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
         <label class="btn btn-ghost btn-block file-btn">Выбрать фото<input type="file" id="photo" accept="image/*" /></label>
         <button class="btn btn-primary btn-block" id="next" ${r.photo_file_id ? "" : "disabled"}>Дальше</button>
       </div>`,
-    () => `
+  });
+
+  const searchSpec = ratingOf(r.wanted_rating_kind || spec.ratings?.[0]?.kind, r.game) || spec.ratings?.[0];
+  steps.push({
+    id: "filters",
+    render: () => `
       <div class="panel stack">
         <h2>Кого ищем</h2>
         <p class="muted">Можно оставить как есть — без жёстких фильтров</p>
-        ${posButtons(r.wanted_positions, "wanted")}
+        ${posButtons(r.wanted_roles, "wanted", spec.roles)}
+        ${
+          spec.multi_rating
+            ? `<div class="field"><label>Очередь</label>
+                <div class="pos-grid" data-pos="search-kind">
+                  ${spec.ratings
+                    .map(
+                      (item) => `
+                    <button type="button" data-kind="${item.kind}" class="${r.wanted_rating_kind === item.kind ? "on" : ""}">${escapeHtml(item.label)}</button>`
+                    )
+                    .join("")}
+                </div>
+              </div>`
+            : ""
+        }
         ${dualSliderField({
           minId: "min_age",
           maxId: "max_age",
@@ -462,50 +790,65 @@ function renderRegister() {
           minValue: r.min_age ?? AGE_MIN,
           maxValue: r.max_age ?? AGE_MAX,
           format: formatAge,
+          fmt: "age",
         })}
-        ${dualSliderField({
-          minId: "min_mmr",
-          maxId: "max_mmr",
-          label: "MMR",
-          min: MMR_MIN,
-          max: MMR_MAX,
-          step: MMR_STEP,
-          minValue: r.min_mmr ?? MMR_MIN,
-          maxValue: r.max_mmr ?? MMR_MAX,
-          format: formatMmr,
-        })}
+        ${
+          searchSpec
+            ? dualSliderField({
+                minId: "min_skill",
+                maxId: "max_skill",
+                label: searchSpec.label,
+                min: searchSpec.min,
+                max: searchSpec.max,
+                step: searchSpec.step,
+                minValue: r.min_skill ?? searchSpec.min,
+                maxValue: r.max_skill ?? searchSpec.max,
+                format: (v) => formatSkill(searchSpec, v),
+                fmt: searchSpec.kind,
+              })
+            : ""
+        }
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
-  ];
+    bind: (root) => {
+      bindPos(root, "wanted", r.wanted_roles);
+      root.querySelectorAll("[data-pos=search-kind] button").forEach((btn) => {
+        btn.onclick = () => {
+          r.wanted_rating_kind = btn.dataset.kind;
+          const next = ratingOf(r.wanted_rating_kind, r.game);
+          if (next) {
+            r.min_skill = next.min;
+            r.max_skill = next.max;
+          }
+          render();
+        };
+      });
+    },
+  });
 
+  return steps;
+}
+
+function renderRegister() {
+  const r = state.register;
+  const steps = registerSteps(r);
+  r.step = Math.min(r.step, steps.length - 1);
+  const current = steps[r.step];
   const root = document.getElementById("app");
-  root.innerHTML = shell(`Анкета · ${r.step + 1}/${steps.length}`, steps[r.step](), { showNav: false });
-
-  if (r.step === 3) bindPos(root, "positions", r.positions);
-  if (r.step === 7) bindPos(root, "wanted", r.wanted_positions);
+  const showNav = r.mode === "game";
+  root.innerHTML = shell(`Анкета · ${r.step + 1}/${steps.length}`, current.render(), { showNav });
+  if (showNav) {
+    bindNav(root);
+    bindGameSwitch(root);
+  }
   bindSliders(root);
+  current.bind?.(root);
 
   const next = root.querySelector("#next");
   if (next) {
     next.onclick = async () => {
       try {
-        if (r.step === 0) {
-          r.name = root.querySelector("#name").value.trim();
-          if (!r.name) throw new Error("Введи имя");
-        } else if (r.step === 1) {
-          r.age = String(readRangeValue(root, "age"));
-        } else if (r.step === 2) {
-          r.city = root.querySelector("#city").value.trim();
-          if (!r.city) throw new Error("Укажи город");
-        } else if (r.step === 3) {
-          if (!r.positions.length) throw new Error("Выбери роли");
-        } else if (r.step === 4) {
-          r.mmr = String(readRangeValue(root, "mmr"));
-        } else if (r.step === 5) {
-          r.bio = root.querySelector("#bio").value.trim();
-        } else if (r.step === 6) {
-          if (!r.photo_file_id) throw new Error("Нужно фото");
-        }
+        current.validate?.(root);
         r.step += 1;
         render();
       } catch (e) {
@@ -538,36 +881,45 @@ function renderRegister() {
   if (finish) {
     finish.onclick = async () => {
       try {
+        current.validate?.(root);
+        const spec = gameSpec(r.game);
+        const searchSpec = ratingOf(r.wanted_rating_kind || spec?.ratings?.[0]?.kind, r.game);
         const ageFilter = dualFilterPayload(
           readRangeValue(root, "min_age"),
           readRangeValue(root, "max_age"),
           AGE_MIN,
           AGE_MAX
         );
-        const mmrFilter = dualFilterPayload(
-          readRangeValue(root, "min_mmr"),
-          readRangeValue(root, "max_mmr"),
-          MMR_MIN,
-          MMR_MAX
-        );
+        const skillFilter = searchSpec
+          ? dualFilterPayload(
+              readRangeValue(root, "min_skill"),
+              readRangeValue(root, "max_skill"),
+              searchSpec.min,
+              searchSpec.max
+            )
+          : { min: null, max: null };
+        const kinds = r.rating_kinds.length ? r.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
         await api("/api/register", {
           method: "POST",
           body: JSON.stringify({
+            game: r.game,
             name: r.name,
             age: Number(r.age),
             city: r.city,
-            mmr: Number(r.mmr),
-            positions: r.positions,
+            roles: r.roles,
+            ratings: kinds.map((kind) => ({ kind, value: Number(r.ratings[kind]) })),
             bio: r.bio,
             photo_file_id: r.photo_file_id,
-            wanted_positions: r.wanted_positions,
+            copy_card_from: r.copy_from || null,
+            wanted_roles: r.wanted_roles,
+            wanted_rating_kind: r.wanted_rating_kind || searchSpec?.kind,
             min_age: ageFilter.min,
             max_age: ageFilter.max,
-            min_mmr: mmrFilter.min,
-            max_mmr: mmrFilter.max,
+            min_skill: skillFilter.min,
+            max_skill: skillFilter.max,
           }),
         });
-        await refreshMe();
+        await refreshMe(r.game);
         state.tab = "browse";
         haptic("medium");
         toast("Анкета сохранена");
@@ -580,7 +932,7 @@ function renderRegister() {
 }
 
 async function loadBrowse() {
-  state.browse = await api("/api/browse/next");
+  state.browse = await api(`/api/browse/next?game=${encodeURIComponent(currentGame())}`);
 }
 
 async function renderBrowse() {
@@ -593,14 +945,16 @@ async function renderBrowse() {
     if (!profile) {
       root.innerHTML = shell(
         "Лента",
-        `<div class="empty"><strong>Анкеты закончились</strong>Попробуй позже или ослабь фильтры в профиле.</div>`
+        `${gameSwitchHtml()}<div class="empty"><strong>Анкеты закончились</strong>Попробуй позже или ослабь фильтры в профиле.</div>`
       );
       bindNav(root);
+      bindGameSwitch(root);
       return;
     }
     root.innerHTML = shell(
       "Лента",
       `
+      ${gameSwitchHtml()}
       ${profileCard(profile)}
       <div class="actions-bar">
         <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo")}</button>
@@ -616,12 +970,13 @@ async function renderBrowse() {
       </p>`
     );
     bindNav(root);
+    bindGameSwitch(root);
 
     const doSwipe = async (action, message = null) => {
       try {
         const res = await api("/api/swipe", {
           method: "POST",
-          body: JSON.stringify({ to_user_id: profile.telegram_id, action, message }),
+          body: JSON.stringify({ to_user_id: profile.telegram_id, action, message, game: currentGame() }),
         });
         // Как в боте: возврат только после дизлайка (лайк/мэтч — без undo)
         if (action === "dislike") {
@@ -650,7 +1005,7 @@ async function renderBrowse() {
       try {
         await api("/api/swipe/undo", {
           method: "POST",
-          body: JSON.stringify({ to_user_id: state.lastSwipedId }),
+          body: JSON.stringify({ to_user_id: state.lastSwipedId, game: currentGame() }),
         });
         // Возвращаем ту же анкету, а не случайную следующую
         state.browse = { profile: state.lastSwipedProfile };
@@ -718,6 +1073,7 @@ function openReportCommentModal(profile, reason, prevOverlay, { onDone } = {}) {
           to_user_id: profile.telegram_id,
           reason,
           comment: comment || null,
+          game: currentGame(),
         }),
       });
       overlay.remove();
@@ -795,20 +1151,22 @@ async function renderLikes() {
   root.innerHTML = shell("Лайки", `<div class="loader"></div>`);
   bindNav(root);
   try {
-    state.likes = await api(`/api/likes?index=${state.likesIndex}`);
+    state.likes = await api(`/api/likes?index=${state.likesIndex}&game=${encodeURIComponent(currentGame())}`);
     const { profile, total, index, message } = state.likes;
     if (!profile) {
       root.innerHTML = shell(
         "Лайки",
-        `<div class="empty"><strong>Пока тихо</strong>Новых входящих лайков нет.</div>`
+        `${gameSwitchHtml()}<div class="empty"><strong>Пока тихо</strong>Новых входящих лайков нет.</div>`
       );
       bindNav(root);
+      bindGameSwitch(root);
       return;
     }
     state.likesIndex = index;
     root.innerHTML = shell(
       `Лайки · ${index + 1}/${total}`,
       `
+      ${gameSwitchHtml()}
       ${profileCard(profile, message ? `<div class="msg-note">💌 «${escapeHtml(message)}»</div>` : "")}
       <div class="actions three">
         <button class="btn btn-ghost" id="prev" ${index <= 0 ? "disabled" : ""}>←</button>
@@ -821,6 +1179,7 @@ async function renderLikes() {
       <button type="button" class="report-link" id="report">Пожаловаться</button>`
     );
     bindNav(root);
+    bindGameSwitch(root);
     root.querySelector("#prev").onclick = () => {
       state.likesIndex = Math.max(0, index - 1);
       render();
@@ -833,7 +1192,7 @@ async function renderLikes() {
       try {
         await api("/api/swipe", {
           method: "POST",
-          body: JSON.stringify({ to_user_id: profile.telegram_id, action: "dislike" }),
+          body: JSON.stringify({ to_user_id: profile.telegram_id, action: "dislike", game: currentGame() }),
         });
         await refreshMe();
         state.likesIndex = 0;
@@ -846,7 +1205,7 @@ async function renderLikes() {
       try {
         const res = await api("/api/swipe", {
           method: "POST",
-          body: JSON.stringify({ to_user_id: profile.telegram_id, action: "like" }),
+          body: JSON.stringify({ to_user_id: profile.telegram_id, action: "like", game: currentGame() }),
         });
         await refreshMe();
         state.likesIndex = 0;
@@ -877,20 +1236,22 @@ async function renderMatches() {
   root.innerHTML = shell("Мэтчи", `<div class="loader"></div>`);
   bindNav(root);
   try {
-    state.matches = await api(`/api/matches?index=${state.matchesIndex}`);
+    state.matches = await api(`/api/matches?index=${state.matchesIndex}&game=${encodeURIComponent(currentGame())}`);
     const { profile, total, index, rating } = state.matches;
     if (!profile) {
       root.innerHTML = shell(
         "Мэтчи",
-        `<div class="empty"><strong>Мэтчей пока нет</strong>Лайкай анкеты в ленте.</div>`
+        `${gameSwitchHtml()}<div class="empty"><strong>Мэтчей пока нет</strong>Лайкай анкеты в ленте.</div>`
       );
       bindNav(root);
+      bindGameSwitch(root);
       return;
     }
     state.matchesIndex = index;
     root.innerHTML = shell(
       `Мэтчи · ${index + 1}/${total}`,
       `
+      ${gameSwitchHtml()}
       ${profileCard(profile, contactBlockHtml(profile, "Написать"))}
       <div class="row" style="margin-top:12px">
         <button class="btn btn-ghost" id="aura" ${rating?.has_aura ? "disabled" : ""}>🔥 Aura</button>
@@ -902,6 +1263,7 @@ async function renderMatches() {
       </div>`
     );
     bindNav(root);
+    bindGameSwitch(root);
     root.querySelector("#prev").onclick = () => {
       state.matchesIndex = Math.max(0, index - 1);
       render();
@@ -914,7 +1276,7 @@ async function renderMatches() {
       try {
         await api("/api/matches/rate", {
           method: "POST",
-          body: JSON.stringify({ to_user_id: profile.telegram_id, kind }),
+          body: JSON.stringify({ to_user_id: profile.telegram_id, kind, game: currentGame() }),
         });
         toast(kind === "aura" ? "Aura поставлена" : "Vibe поставлен");
         render();
@@ -943,21 +1305,30 @@ async function renderProfile() {
   }
   const hidden = p.status === "hidden";
   const s = p.settings || {};
-  const wanted = (s.wanted_positions || [])
-    .map((id) => POSITIONS.find((x) => x.id === id)?.label)
+  const spec = gameSpec();
+  const wantedIds = s.wanted_roles || s.wanted_positions || [];
+  const wanted = wantedIds
+    .map((id) => (spec?.roles || []).find((x) => x.id === id)?.label)
     .filter(Boolean)
     .join(", ");
+  const searchSpec = ratingOf(s.wanted_rating_kind);
+  const skillLabel = searchSpec?.label || "Рейтинг";
+  const minSkill = s.min_skill ?? s.min_mmr;
+  const maxSkill = s.max_skill ?? s.max_mmr;
   const filters = [
     wanted ? `Роли: ${wanted}` : "Роли: любые",
     s.min_age || s.max_age ? `Возраст: ${formatAgeRange(s.min_age, s.max_age) ?? "—"}` : null,
-    s.min_mmr || s.max_mmr ? `MMR: ${s.min_mmr ?? "—"}–${s.max_mmr ?? "—"}` : null,
+    minSkill || maxSkill ? `${skillLabel}: ${minSkill ?? "—"}–${maxSkill ?? "—"}` : null,
+    s.wanted_rating_kind && searchSpec ? `Очередь: ${searchSpec.label}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
+  const otherGames = (state.me?.games || []).filter((item) => item.has_profile && item.id !== currentGame());
 
   root.innerHTML = shell(
     "Профиль",
     `
+    ${gameSwitchHtml()}
     ${profileCard(p)}
     <div class="panel" style="margin-top:12px">
       <h2>Поиск</h2>
@@ -967,20 +1338,27 @@ async function renderProfile() {
       <button class="btn btn-primary btn-block" id="edit">Редактировать анкету</button>
       <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
       <button class="btn btn-ghost btn-block" id="toggle">${hidden ? "Показать анкету" : "Скрыть анкету"}</button>
+      ${otherGames.length ? `<button class="btn btn-ghost btn-block" id="copy-all">Скопировать описание в другие анкеты</button>` : ""}
       <button class="btn btn-ghost btn-block" id="rules">Правила</button>
       <button class="btn btn-ghost btn-block" id="feedback">Сообщить о баге</button>
-      <button class="btn btn-ghost btn-block" id="delete" style="color:var(--danger)">Удалить анкету</button>
+      ${otherGames.length ? `<button class="btn btn-ghost btn-block" id="delete-game" style="color:var(--danger)">Удалить анкету ${escapeHtml(p.game_label || "")}</button>` : ""}
+      <button class="btn btn-ghost btn-block" id="delete" style="color:var(--danger)">Удалить все анкеты</button>
     </div>`
   );
   bindNav(root);
+  bindGameSwitch(root);
   root.querySelector("#edit").onclick = () => {
     const profile = state.me.profile;
+    const ratings = {};
+    for (const item of spec?.ratings || []) ratings[item.kind] = String(item.default ?? item.min);
+    for (const item of profile.ratings || []) ratings[item.kind] = String(item.value);
     state.edit = {
       name: profile.name || "",
       age: String(profile.age ?? ""),
       city: profile.city || "",
-      mmr: String(profile.mmr ?? ""),
-      positions: [...(profile.positions || [])],
+      roles: [...(profile.roles || profile.positions || [])],
+      rating_kinds: (profile.ratings || []).map((item) => item.kind),
+      ratings,
       bio: profile.bio || "",
       photo_file_id: profile.photo_file_id || "",
       photo_preview: profile.photo_url || "",
@@ -990,12 +1368,14 @@ async function renderProfile() {
   };
   root.querySelector("#settings").onclick = () => {
     const s = state.me.profile.settings || {};
+    const search = ratingOf(s.wanted_rating_kind) || spec?.ratings?.[0];
     state.settingsForm = {
-      wanted_positions: [...(s.wanted_positions || [])],
+      wanted_roles: [...(s.wanted_roles || s.wanted_positions || [])],
+      wanted_rating_kind: s.wanted_rating_kind || search?.kind || "",
       min_age: s.min_age ?? AGE_MIN,
       max_age: s.max_age ?? AGE_MAX,
-      min_mmr: s.min_mmr ?? MMR_MIN,
-      max_mmr: s.max_mmr ?? MMR_MAX,
+      min_skill: s.min_skill ?? s.min_mmr ?? search?.min ?? 0,
+      max_skill: s.max_skill ?? s.max_mmr ?? search?.max ?? 0,
     };
     state.profileView = "settings";
     render();
@@ -1004,7 +1384,7 @@ async function renderProfile() {
     try {
       await api("/api/profile/status", {
         method: "POST",
-        body: JSON.stringify({ status: hidden ? "active" : "hidden" }),
+        body: JSON.stringify({ status: hidden ? "active" : "hidden", game: currentGame() }),
       });
       await refreshMe();
       toast(hidden ? "Анкета видна" : "Анкета скрыта");
@@ -1031,8 +1411,37 @@ async function renderProfile() {
       toast(e.message);
     }
   };
+  const copyAll = root.querySelector("#copy-all");
+  if (copyAll) {
+    copyAll.onclick = async () => {
+      try {
+        await api("/api/profile/copy", {
+          method: "POST",
+          body: JSON.stringify({ from_game: currentGame(), bio: true, photo: true }),
+        });
+        toast("Описание скопировано в другие анкеты");
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  }
+  const deleteGame = root.querySelector("#delete-game");
+  if (deleteGame) {
+    deleteGame.onclick = async () => {
+      if (!confirm("Удалить только анкету этой игры?")) return;
+      try {
+        await api(`/api/games/${encodeURIComponent(currentGame())}`, { method: "DELETE" });
+        await refreshMe();
+        state.profileView = "main";
+        toast("Анкета игры удалена");
+        render();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  }
   root.querySelector("#delete").onclick = async () => {
-    if (!confirm("Удалить анкету безвозвратно?")) return;
+    if (!confirm("Удалить все анкеты безвозвратно?")) return;
     try {
       await api("/api/profile", { method: "DELETE" });
       await refreshMe();
@@ -1045,6 +1454,39 @@ async function renderProfile() {
   };
 }
 
+function renderRatingFields(kinds, values, game = currentGame()) {
+  return kinds
+    .map((kind) => {
+      const item = ratingOf(kind, game);
+      if (!item) return "";
+      if (item.options?.length) {
+        return `
+          <div class="field">
+            <label>${escapeHtml(item.label)}</label>
+            <select id="rating-${item.kind}">
+              ${item.options
+                .map(
+                  (opt) => `
+                <option value="${opt.id}" ${Number(values[item.kind]) === Number(opt.id) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
+                )
+                .join("")}
+            </select>
+          </div>`;
+      }
+      return sliderField({
+        id: `rating-${item.kind}`,
+        label: item.label,
+        min: item.min,
+        max: item.max,
+        step: item.step,
+        value: values[item.kind] ?? item.default,
+        format: (v) => formatSkill(item, v),
+        fmt: item.kind,
+      });
+    })
+    .join("");
+}
+
 function renderEditProfile() {
   const root = document.getElementById("app");
   const e = state.edit;
@@ -1052,6 +1494,8 @@ function renderEditProfile() {
     state.profileView = "main";
     return renderProfile();
   }
+  const spec = gameSpec();
+  const kinds = e.rating_kinds?.length ? e.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
 
   root.innerHTML = shell(
     "Редактирование",
@@ -1060,7 +1504,7 @@ function renderEditProfile() {
       <div class="row">
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
-      <h2>Анкета</h2>
+      <h2>${escapeHtml(spec?.label || "Анкета")}</h2>
       <div class="field"><label>Имя</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
       ${sliderField({
         id: "age",
@@ -1069,18 +1513,25 @@ function renderEditProfile() {
         max: AGE_MAX,
         value: e.age || 18,
         format: formatAge,
+        fmt: "age",
       })}
       <div class="field"><label>Город</label><input id="city" maxlength="50" value="${escapeHtml(e.city)}" /></div>
-      ${sliderField({
-        id: "mmr",
-        label: "MMR",
-        min: MMR_MIN,
-        max: MMR_MAX,
-        step: MMR_STEP,
-        value: e.mmr || 3000,
-        format: formatMmr,
-      })}
-      <div class="field"><label>Роли</label>${posButtons(e.positions, "edit-pos")}</div>
+      ${
+        spec?.multi_rating
+          ? `<div class="field"><label>Где играешь</label>
+              <div class="pos-grid" data-pos="edit-queues">
+                ${(spec.ratings || [])
+                  .map(
+                    (item) => `
+                  <button type="button" data-kind="${item.kind}" class="${kinds.includes(item.kind) ? "on" : ""}">${escapeHtml(item.label)}</button>`
+                  )
+                  .join("")}
+              </div>
+            </div>`
+          : ""
+      }
+      ${renderRatingFields(kinds, e.ratings || {})}
+      <div class="field"><label>Роли</label>${posButtons(e.roles, "edit-pos", spec?.roles)}</div>
       <div class="field"><label>О себе</label><textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea></div>
       <div class="field">
         <label>Фото</label>
@@ -1095,8 +1546,17 @@ function renderEditProfile() {
     </div>`
   );
   bindNav(root);
-  bindPos(root, "edit-pos", e.positions);
+  bindPos(root, "edit-pos", e.roles);
   bindSliders(root);
+  root.querySelectorAll("[data-pos=edit-queues] button").forEach((btn) => {
+    btn.onclick = () => {
+      const kind = btn.dataset.kind;
+      const idx = e.rating_kinds.indexOf(kind);
+      if (idx >= 0) e.rating_kinds.splice(idx, 1);
+      else e.rating_kinds.push(kind);
+      render();
+    };
+  });
 
   root.querySelector("#back").onclick = () => {
     state.profileView = "main";
@@ -1126,26 +1586,30 @@ function renderEditProfile() {
       e.name = root.querySelector("#name").value.trim();
       e.age = String(readRangeValue(root, "age"));
       e.city = root.querySelector("#city").value.trim();
-      e.mmr = String(readRangeValue(root, "mmr"));
       e.bio = root.querySelector("#bio").value.trim();
+      const selected = e.rating_kinds?.length ? e.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
+      for (const kind of selected) {
+        const field = root.querySelector(`#rating-${kind}`);
+        if (field) e.ratings[kind] = String(field.value);
+      }
 
       if (!e.name) throw new Error("Введи имя");
       const age = Number(e.age);
       if (!age || age < AGE_MIN || age > AGE_MAX) throw new Error(`Возраст ${AGE_MIN}–${AGE_MAX}+`);
       if (!e.city) throw new Error("Укажи город");
-      const mmr = Number(e.mmr);
-      if (Number.isNaN(mmr) || mmr < MMR_MIN) throw new Error("Некорректный MMR");
-      if (!e.positions.length) throw new Error("Выбери хотя бы одну роль");
+      if (!e.roles.length) throw new Error("Выбери хотя бы одну роль");
+      if (!selected.length) throw new Error("Укажи рейтинг");
       if (!e.photo_file_id) throw new Error("Нужно фото");
 
       await api("/api/profile", {
         method: "PATCH",
         body: JSON.stringify({
+          game: currentGame(),
           name: e.name,
           age,
           city: e.city,
-          mmr,
-          positions: e.positions,
+          roles: e.roles,
+          ratings: selected.map((kind) => ({ kind, value: Number(e.ratings[kind]) })),
           bio: e.bio,
           photo_file_id: e.photo_file_id,
         }),
@@ -1169,6 +1633,8 @@ function renderSearchSettings() {
     state.profileView = "main";
     return renderProfile();
   }
+  const spec = gameSpec();
+  const searchSpec = ratingOf(f.wanted_rating_kind, currentGame()) || spec?.ratings?.[0];
 
   root.innerHTML = shell(
     "Поиск",
@@ -1179,7 +1645,21 @@ function renderSearchSettings() {
       </div>
       <h2>Настройки поиска</h2>
       <p class="muted" style="margin:0">Крайние значения = без ограничения</p>
-      <div class="field"><label>Ищем роли</label>${posButtons(f.wanted_positions, "want-pos")}</div>
+      <div class="field"><label>Ищем роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
+      ${
+        spec?.multi_rating
+          ? `<div class="field"><label>Очередь</label>
+              <div class="pos-grid" data-pos="search-kind">
+                ${(spec.ratings || [])
+                  .map(
+                    (item) => `
+                  <button type="button" data-kind="${item.kind}" class="${f.wanted_rating_kind === item.kind ? "on" : ""}">${escapeHtml(item.label)}</button>`
+                  )
+                  .join("")}
+              </div>
+            </div>`
+          : ""
+      }
       ${dualSliderField({
         minId: "min_age",
         maxId: "max_age",
@@ -1189,24 +1669,41 @@ function renderSearchSettings() {
         minValue: f.min_age,
         maxValue: f.max_age,
         format: formatAge,
+        fmt: "age",
       })}
-      ${dualSliderField({
-        minId: "min_mmr",
-        maxId: "max_mmr",
-        label: "MMR",
-        min: MMR_MIN,
-        max: MMR_MAX,
-        step: MMR_STEP,
-        minValue: f.min_mmr,
-        maxValue: f.max_mmr,
-        format: formatMmr,
-      })}
+      ${
+        searchSpec
+          ? dualSliderField({
+              minId: "min_skill",
+              maxId: "max_skill",
+              label: searchSpec.label,
+              min: searchSpec.min,
+              max: searchSpec.max,
+              step: searchSpec.step,
+              minValue: f.min_skill,
+              maxValue: f.max_skill,
+              format: (v) => formatSkill(searchSpec, v),
+              fmt: searchSpec.kind,
+            })
+          : ""
+      }
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
     </div>`
   );
   bindNav(root);
-  bindPos(root, "want-pos", f.wanted_positions);
+  bindPos(root, "want-pos", f.wanted_roles);
   bindSliders(root);
+  root.querySelectorAll("[data-pos=search-kind] button").forEach((btn) => {
+    btn.onclick = () => {
+      f.wanted_rating_kind = btn.dataset.kind;
+      const next = ratingOf(f.wanted_rating_kind);
+      if (next) {
+        f.min_skill = next.min;
+        f.max_skill = next.max;
+      }
+      render();
+    };
+  });
 
   root.querySelector("#back").onclick = () => {
     state.profileView = "main";
@@ -1222,21 +1719,25 @@ function renderSearchSettings() {
         AGE_MIN,
         AGE_MAX
       );
-      const mmrFilter = dualFilterPayload(
-        readRangeValue(root, "min_mmr"),
-        readRangeValue(root, "max_mmr"),
-        MMR_MIN,
-        MMR_MAX
-      );
+      const skillFilter = searchSpec
+        ? dualFilterPayload(
+            readRangeValue(root, "min_skill"),
+            readRangeValue(root, "max_skill"),
+            searchSpec.min,
+            searchSpec.max
+          )
+        : { min: null, max: null };
 
       await api("/api/profile/settings", {
         method: "PATCH",
         body: JSON.stringify({
-          wanted_positions: f.wanted_positions,
+          game: currentGame(),
+          wanted_roles: f.wanted_roles,
+          wanted_rating_kind: f.wanted_rating_kind || searchSpec?.kind,
           min_age: ageFilter.min,
           max_age: ageFilter.max,
-          min_mmr: mmrFilter.min,
-          max_mmr: mmrFilter.max,
+          min_skill: skillFilter.min,
+          max_skill: skillFilter.max,
         }),
       });
       await refreshMe();
@@ -1278,7 +1779,19 @@ async function render() {
 
   if (state.me.banned) return renderBanned();
   if (state.me.needs_consent) return renderConsent();
-  if (state.me.needs_registration) return renderRegister();
+  if (state.me.needs_registration) {
+    if (state.register.mode !== "full" || !state.register._started) {
+      state.register = emptyRegister(currentGame() || "dota", "full");
+      state.register._started = true;
+    }
+    return renderRegister();
+  }
+  if (state.me.needs_game_profile) {
+    if (state.register.mode !== "game" || state.register.game !== currentGame()) {
+      state.register = emptyRegister(currentGame(), "game");
+    }
+    return renderRegister();
+  }
 
   if (state.tab === "browse") return renderBrowse();
   if (state.tab === "likes") return renderLikes();

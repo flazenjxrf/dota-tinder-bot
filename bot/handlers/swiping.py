@@ -11,10 +11,11 @@ from bot.database.requests import (
     get_user_with_settings,
     get_like_messages_remaining_today,
     get_reputation_counts,
+    is_game_searching,
     DAILY_LIKE_MESSAGE_LIMIT,
     LIKE_MESSAGE_MAX_LENGTH,
 )
-from bot.database.models import ActionType, ProfileStatus, User
+from bot.database.models import ActionType, User
 from bot.keyboards.inline import (
     get_swipe_keyboard,
     SwipeCallback,
@@ -66,13 +67,15 @@ async def clear_like_message_state(state: FSMContext) -> None:
 
 
 def build_browse_caption(profile: User, reputation: str = "") -> str:
-    pos_names = [positions_mapping[p] for p in sorted(profile.positions)]
+    game_profile = profile.display_profile()
+    pos_names = game_profile.role_labels() if game_profile else [positions_mapping[p] for p in sorted(profile.positions) if p in positions_mapping]
+    rating = " · ".join(game_profile.ratings_display()) if game_profile else f"MMR: {profile.mmr}"
     pos_str = ", ".join(pos_names)
     return (
         f"🎮 <b>Напарник найден:</b>\n\n"
         f"🌟 <b>{profile.name}</b>, {profile.age} | {format_city_display(profile)}\n"
         f"🎯 Роли: {pos_str}\n"
-        f"🏆 MMR: {profile.mmr}{reputation}\n\n"
+        f"🏆 {rating}{reputation}\n\n"
         f"💬 : {profile.bio}"
     )
 
@@ -153,7 +156,7 @@ async def _start_swiping_flow(message: Message, user_id: int, state: FSMContext)
         await message.answer("Сначала заполни свою анкету!")
         return
 
-    if user.status == ProfileStatus.HIDDEN:
+    if not is_game_searching(user):
         await message.answer(HIDDEN_PROFILE_MSG, reply_markup=REMOVE_KEYBOARD)
         return
 
@@ -168,7 +171,7 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback, s
 
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
-    if not user or user.status == ProfileStatus.HIDDEN:
+    if not user or not is_game_searching(user):
         await callback.answer(
             "Твоя анкета скрыта. Включи её, чтобы смотреть анкеты.",
             show_alert=True
@@ -206,7 +209,7 @@ async def undo_last_swipe(callback: CallbackQuery, state: FSMContext):
 
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
-    if not user or user.status == ProfileStatus.HIDDEN:
+    if not user or not is_game_searching(user):
         await callback.answer(
             "Твоя анкета скрыта. Включи её, чтобы смотреть анкеты.",
             show_alert=True,
@@ -226,7 +229,7 @@ async def undo_last_swipe(callback: CallbackQuery, state: FSMContext):
     await set_undo_profile(state, None)
 
     profile = await get_user_with_settings(undo_profile_id)
-    if not profile or profile.status != ProfileStatus.ACTIVE:
+    if not profile or not is_game_searching(profile):
         await callback.answer("Анкета больше недоступна.", show_alert=True)
         await show_next_profile(callback, from_user_id, state=state)
         return
@@ -248,7 +251,7 @@ async def start_like_with_message(
 
     from_user_id = callback.from_user.id
     user = await get_user_with_settings(from_user_id)
-    if not user or user.status == ProfileStatus.HIDDEN:
+    if not user or not is_game_searching(user):
         await callback.answer(
             "Твоя анкета скрыта. Включи её, чтобы смотреть анкеты.",
             show_alert=True,
