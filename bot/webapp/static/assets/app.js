@@ -1086,6 +1086,13 @@ function renderRegister() {
         if (state.me.needs_registration || state.me.needs_game_profile) {
           throw new Error("Анкета не сохранилась полностью. Нажми ещё раз.");
         }
+        state.browse = null;
+        state.likes = null;
+        state.matches = null;
+        state.likesIndex = 0;
+        state.matchesIndex = 0;
+        state.lastSwipedId = null;
+        state.lastSwipedProfile = null;
         state.tab = "browse";
         haptic("medium");
         toast("Анкета сохранена");
@@ -1106,15 +1113,21 @@ async function renderBrowse() {
   root.innerHTML = shell("Лента", `<div class="loader"></div>`);
   bindNav(root);
   try {
-    if (!state.browse) await loadBrowse();
+    // null и { profile: null } — оба повод перезапросить (иначе после регистрации
+    // залипает пустой кэш и пишет «анкеты закончились»).
+    if (!state.browse?.profile) await loadBrowse();
     const profile = state.browse?.profile;
     if (!profile) {
       root.innerHTML = shell(
         "Лента",
-        `${gameSwitchHtml()}<div class="empty"><strong>Анкеты закончились</strong>Попробуй позже или ослабь фильтры в профиле.</div>`
+        `${gameSwitchHtml()}<div class="empty"><strong>Анкеты закончились</strong>Попробуй позже или ослабь фильтры в профиле.<button class="btn btn-ghost btn-block" id="browse-retry" style="margin-top:12px">Обновить</button></div>`
       );
       bindNav(root);
       bindGameSwitch(root);
+      root.querySelector("#browse-retry").onclick = () => {
+        state.browse = null;
+        render();
+      };
       return;
     }
     root.innerHTML = shell(
