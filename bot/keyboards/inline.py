@@ -109,11 +109,18 @@ def get_start_keyboard() -> InlineKeyboardMarkup | None:
     return get_webapp_keyboard()
 
 
-def get_webapp_keyboard(text: str = "📱 Открыть Mini App") -> InlineKeyboardMarkup | None:
+def get_webapp_keyboard(
+    text: str = "📱 Открыть Mini App",
+    *,
+    tab: str | None = None,
+) -> InlineKeyboardMarkup | None:
     if not WEBAPP_URL:
         return None
+    url = WEBAPP_URL
+    if tab in {"browse", "likes", "matches", "profile"}:
+        url = f"{WEBAPP_URL}/?tab={tab}"
     builder = InlineKeyboardBuilder()
-    builder.button(text=text, web_app=WebAppInfo(url=WEBAPP_URL))
+    builder.button(text=text, web_app=WebAppInfo(url=url))
     return builder.as_markup()
 
 

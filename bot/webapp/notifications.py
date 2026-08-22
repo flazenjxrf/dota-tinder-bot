@@ -34,8 +34,8 @@ def format_pending_likes_notification(count: int) -> str:
     )
 
 
-def _miniapp_markup():
-    return get_webapp_keyboard()
+def _miniapp_markup(tab: str | None = None):
+    return get_webapp_keyboard(tab=tab)
 
 
 async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
@@ -47,6 +47,8 @@ async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
     me_link = get_user_link(me.telegram_id, me.name, me.username)
     partner_link = get_user_link(partner.telegram_id, partner.name, partner.username)
 
+    matches_kb = _miniapp_markup("matches")
+
     try:
         await send_match_notification(
             bot,
@@ -54,6 +56,7 @@ async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
             f"Вы с {partner_link} лайкнули друг друга!",
             partner,
             partner_link,
+            reply_markup=matches_kb,
         )
     except Exception:
         logger.exception("Не удалось отправить мэтч уведомление %s", from_user_id)
@@ -65,6 +68,7 @@ async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
             f"Вы с {me_link} лайкнули друг друга!",
             me,
             me_link,
+            reply_markup=matches_kb,
         )
     except Exception:
         logger.exception("Не удалось отправить мэтч уведомление %s", to_user_id)
@@ -84,7 +88,7 @@ async def notify_like_threshold(bot: Bot, to_user_id: int, from_user_id: int) ->
         await bot.send_message(
             to_user_id,
             format_pending_likes_notification(threshold),
-            reply_markup=_miniapp_markup(),
+            reply_markup=_miniapp_markup("likes"),
         )
     except Exception:
         logger.exception("Не удалось отправить уведомление о лайках %s", to_user_id)
@@ -102,7 +106,7 @@ async def notify_like_with_message(
         f"Открой Mini App, чтобы ответить."
     )
     try:
-        await bot.send_message(to_user_id, text, reply_markup=_miniapp_markup())
+        await bot.send_message(to_user_id, text, reply_markup=_miniapp_markup("likes"))
     except Exception:
         logger.exception("Не удалось отправить лайк с сообщением %s", to_user_id)
 

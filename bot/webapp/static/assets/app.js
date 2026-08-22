@@ -235,6 +235,23 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+const CONTACT_PRIVACY_NOTE =
+  "Если написать не получается — у человека могут быть ограничены настройки приватности в Telegram.";
+
+function contactNameHtml(profile) {
+  const name = escapeHtml(profile.name);
+  if (!profile.tg_link) return name;
+  return `<a class="name-link" href="${escapeHtml(profile.tg_link)}" target="_blank" rel="noopener">${name}</a>`;
+}
+
+function contactBlockHtml(profile, label = "Написать в Telegram") {
+  if (!profile.tg_link) return "";
+  return `
+    <a class="btn btn-primary btn-block" style="margin-top:8px" href="${escapeHtml(profile.tg_link)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>
+    <p class="muted contact-note">${escapeHtml(CONTACT_PRIVACY_NOTE)}</p>
+  `;
+}
+
 function profileCard(profile, extraHtml = "") {
   const reps = [];
   if (profile.aura) reps.push(`🔥 ${profile.aura}`);
@@ -247,7 +264,7 @@ function profileCard(profile, extraHtml = "") {
         <img class="card-photo-main" src="${src}" alt="" loading="lazy" onerror="this.style.opacity=0.25" />
       </div>
       <div class="card-body">
-        <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
+        <h2>${contactNameHtml(profile)}, ${profile.age}</h2>
         <div class="meta">
           <span class="chip">📍 ${escapeHtml(profile.city)}</span>
           <span class="chip accent">🏆 ${profile.mmr}</span>
@@ -766,7 +783,7 @@ function showMatchModal(profile) {
         <p class="muted">Вы лайкнули друг друга</p>
       </div>
       ${profileCard(profile)}
-      <a class="btn btn-primary btn-block" href="${escapeHtml(profile.tg_link)}" target="_blank" rel="noopener">Написать в Telegram</a>
+      ${contactBlockHtml(profile)}
       <button class="btn btn-ghost btn-block" id="close">Продолжить</button>
     </div>`;
   document.body.appendChild(overlay);
@@ -874,10 +891,7 @@ async function renderMatches() {
     root.innerHTML = shell(
       `Мэтчи · ${index + 1}/${total}`,
       `
-      ${profileCard(
-        profile,
-        `<a class="btn btn-primary btn-block" style="margin-top:8px" href="${escapeHtml(profile.tg_link)}" target="_blank" rel="noopener">Написать</a>`
-      )}
+      ${profileCard(profile, contactBlockHtml(profile, "Написать"))}
       <div class="row" style="margin-top:12px">
         <button class="btn btn-ghost" id="aura" ${rating?.has_aura ? "disabled" : ""}>🔥 Aura</button>
         <button class="btn btn-ghost" id="vibe" ${rating?.has_vibe ? "disabled" : ""}>💜 Vibe</button>
@@ -1272,6 +1286,19 @@ async function render() {
   return renderProfile();
 }
 
+async function resolveLaunchTab() {
+  const allowed = new Set(["browse", "likes", "matches", "profile"]);
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get("tab");
+    if (fromQuery && allowed.has(fromQuery)) return fromQuery;
+  } catch {
+    /* ignore */
+  }
+  const fromStart = tg?.initDataUnsafe?.start_param;
+  if (fromStart && allowed.has(fromStart)) return fromStart;
+  return null;
+}
+
 async function main() {
   if (tg) {
     tg.ready();
@@ -1283,6 +1310,8 @@ async function main() {
       /* older clients */
     }
   }
+  const launchTab = await resolveLaunchTab();
+  if (launchTab) state.tab = launchTab;
   await render();
 }
 

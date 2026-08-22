@@ -131,6 +131,20 @@ button {
   letter-spacing: -0.02em;
 }
 
+.card-body h2 .name-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(47, 111, 237, 0.45);
+}
+
+.contact-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;

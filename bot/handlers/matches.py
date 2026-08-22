@@ -14,7 +14,7 @@ from bot.keyboards.reply import REMOVE_KEYBOARD
 from bot.utils.bot_commands import CMD_MATCHES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
-from bot.utils.match import get_user_link
+from bot.utils.match import CONTACT_PRIVACY_NOTE, get_user_link
 from bot.utils.reputation import (
     format_reputation_line_from_counts,
     AURA_EMOJI,
@@ -59,11 +59,12 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
     has_aura, has_vibe = await get_teammate_rating(user_id, partner.telegram_id)
     caption = (
         f"💚 <b>Мэтч</b> ({actual_index + 1}/{total}):\n\n"
-        f"🌟 <b>{partner.name}</b>, {partner.age} | {format_city_display(partner)}\n"
+        f"🌟 {contact}, {partner.age} | {format_city_display(partner)}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {partner.mmr}{reputation}\n\n"
         f"💬 О себе: {partner.bio}\n\n"
-        f"📩 Написать: {contact}\n\n"
+        f"📩 Написать: {contact}\n"
+        f"{CONTACT_PRIVACY_NOTE}\n\n"
         f"<i>После игры можешь оценить тиммейта 👇</i>"
     )
 

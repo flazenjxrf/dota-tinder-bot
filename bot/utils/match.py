@@ -20,15 +20,24 @@ def get_user_link(user_id: int, name: str, username: str | None) -> str:
     return f'<a href="tg://user?id={user_id}">{safe_name}</a>'
 
 
+CONTACT_PRIVACY_NOTE = (
+    "<i>*Если написать не получается — у человека могут быть "
+    "ограничены настройки приватности в Telegram.</i>"
+)
+
+
 def format_match_profile_caption(user: User) -> str:
     pos_names = [POSITIONS_MAPPING[p] for p in sorted(user.positions)]
     pos_str = ", ".join(pos_names)
+    name_link = get_user_link(user.telegram_id, user.name, user.username)
     return (
         f"👤 <b>Анкета напарника:</b>\n\n"
-        f"🌟 <b>{user.name}</b>, {user.age} | 📍 {user.city}\n"
+        f"🌟 {name_link}, {user.age} | 📍 {user.city}\n"
         f"🎯 Роли: {pos_str}\n"
         f"🏆 MMR: {user.mmr}\n\n"
-        f"💬 О себе: {user.bio}"
+        f"💬 О себе: {user.bio}\n\n"
+        f"📩 Написать: {name_link}\n"
+        f"{CONTACT_PRIVACY_NOTE}"
     )
 
 
@@ -56,6 +65,7 @@ async def send_match_notification(
     intro_text: str,
     partner: User,
     partner_link: str,
+    reply_markup=None,
 ):
     """Отправляет текст о мэтче и анкету напарника."""
     await bot.send_message(
@@ -63,8 +73,11 @@ async def send_match_notification(
         text=(
             f"🎉 <b>Новый мэтч!</b>\n\n"
             f"{intro_text}\n"
-            f"Свяжись с {partner_link}, а после игры можешь оставить +rep в мэтчах! 🎮"
+            f"Нажми на имя, чтобы написать: {partner_link}\n"
+            f"{CONTACT_PRIVACY_NOTE}\n\n"
+            f"После игры можешь оставить +rep в мэтчах 🎮"
         ),
+        reply_markup=reply_markup,
     )
     await _send_profile_to_chat(bot, chat_id, partner)
 
