@@ -53,14 +53,14 @@ def _empty_to_none(value: str | None) -> str | None:
 
 class ProfileUpdateBody(BaseModel):
     name: str | None = Field(default=None, max_length=50)
-    age: int | None = Field(default=None, ge=12, le=60)
+    age: int | None = Field(default=None, ge=12, le=50)
     city: str | None = Field(default=None, max_length=50)
     roles: list[int] | None = None
     ratings: list[RatingInput] | None = None
     bio: str | None = Field(default=None, max_length=500)
     photo_file_id: str | None = Field(default=None, min_length=1)
     game: str | None = None
-    mmr: int | None = Field(default=None, ge=0, le=20000)
+    mmr: int | None = Field(default=None, ge=0, le=10000)
     positions: list[int] | None = None
 
     @field_validator("name", "city", "photo_file_id", "bio", mode="before")
@@ -71,17 +71,24 @@ class ProfileUpdateBody(BaseModel):
         return value
 
 
+class SkillFilterInput(BaseModel):
+    kind: str
+    min: int | None = None
+    max: int | None = None
+
+
 class SettingsUpdateBody(BaseModel):
     wanted_roles: list[int] | None = None
     wanted_rating_kind: str | None = None
-    min_age: int | None = Field(default=None, ge=12, le=60)
-    max_age: int | None = Field(default=None, ge=12, le=60)
+    min_age: int | None = Field(default=None, ge=12, le=50)
+    max_age: int | None = Field(default=None, ge=12, le=50)
     min_skill: int | None = None
     max_skill: int | None = None
+    skill_filters: list[SkillFilterInput] | None = None
     game: str | None = None
     wanted_positions: list[int] | None = None
-    min_mmr: int | None = Field(default=None, ge=0, le=20000)
-    max_mmr: int | None = Field(default=None, ge=0, le=20000)
+    min_mmr: int | None = Field(default=None, ge=0, le=10000)
+    max_mmr: int | None = Field(default=None, ge=0, le=10000)
 
     @field_validator("wanted_rating_kind", "game", mode="before")
     @classmethod
@@ -94,7 +101,7 @@ class SettingsUpdateBody(BaseModel):
 class RegisterBody(BaseModel):
     game: str = "dota"
     name: str | None = Field(default=None, min_length=1, max_length=50)
-    age: int | None = Field(default=None, ge=12, le=60)
+    age: int | None = Field(default=None, ge=12, le=50)
     city: str | None = Field(default=None, min_length=1, max_length=50)
     roles: list[int] | None = None
     ratings: list[RatingInput] | None = None
@@ -107,7 +114,8 @@ class RegisterBody(BaseModel):
     max_age: int | None = None
     min_skill: int | None = None
     max_skill: int | None = None
-    mmr: int | None = Field(default=None, ge=0, le=20000)
+    skill_filters: list[SkillFilterInput] | None = None
+    mmr: int | None = Field(default=None, ge=0, le=10000)
     positions: list[int] | None = None
     wanted_positions: list[int] | None = None
     min_mmr: int | None = None

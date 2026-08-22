@@ -42,9 +42,10 @@ GAMES: dict[str, dict[str, Any]] = {
                 "kind": "mmr",
                 "label": "MMR",
                 "min": 0,
-                "max": 20000,
+                "max": 10000,
                 "step": 100,
                 "default": 3000,
+                "open_ended": True,
             },
         ],
         "ratings_required": 1,
@@ -55,24 +56,26 @@ GAMES: dict[str, dict[str, Any]] = {
         "label": "CS2",
         "short": "CS2",
         "roles": {
-            1: "Entry",
-            2: "AWPer",
-            3: "Support",
-            4: "Lurker",
-            5: "IGL",
+            1: "Энтри",
+            2: "Снайпер",
+            3: "Саппорт",
+            4: "Люркер",
+            5: "Опорник",
+            6: "Капитан",
         },
         "ratings": [
             {
                 "kind": "premier",
-                "label": "Premier",
+                "label": "Премьер",
                 "min": 0,
                 "max": 40000,
                 "step": 1000,
                 "default": 10000,
+                "open_ended": True,
             },
             {
                 "kind": "faceit",
-                "label": "Faceit",
+                "label": "Фейсит",
                 "min": 1,
                 "max": 10,
                 "step": 1,
@@ -80,12 +83,21 @@ GAMES: dict[str, dict[str, Any]] = {
             },
             {
                 "kind": "competitive",
-                "label": "Звание",
+                "label": "Матчмейкинг",
                 "min": 1,
                 "max": 18,
                 "step": 1,
                 "default": 10,
                 "options": COMPETITIVE_RANKS,
+            },
+            {
+                "kind": "public",
+                "label": "Паблики",
+                "min": 0,
+                "max": 0,
+                "step": 1,
+                "default": 0,
+                "no_value": True,
             },
         ],
         "ratings_required": 1,
@@ -145,17 +157,24 @@ def format_rating_value(game: str | None, kind: str, value: int) -> str:
     spec = rating_spec(game, kind)
     if not spec:
         return str(value)
+    if spec.get("no_value"):
+        return ""
     options = spec.get("options")
     if options:
         return options.get(value, str(value))
     if kind == "faceit":
         return f"lvl {value}"
-    return f"{value:,}".replace(",", " ")
+    text = f"{value:,}".replace(",", " ")
+    if spec.get("open_ended") and value >= spec["max"]:
+        return f"{text}+"
+    return text
 
 
 def format_rating(game: str | None, kind: str, value: int) -> str:
     spec = rating_spec(game, kind)
     label = spec["label"] if spec else kind
+    if spec and spec.get("no_value"):
+        return label
     return f"{label} {format_rating_value(game, kind, value)}"
 
 
@@ -183,6 +202,8 @@ def catalog_payload() -> list[dict[str, Any]]:
                     "max": item["max"],
                     "step": item["step"],
                     "default": item.get("default", item["min"]),
+                    "open_ended": bool(item.get("open_ended")),
+                    "no_value": bool(item.get("no_value")),
                     "options": [
                         {"id": opt_id, "label": opt_label}
                         for opt_id, opt_label in (item.get("options") or {}).items()

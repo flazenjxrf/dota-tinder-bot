@@ -124,6 +124,26 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
         settings.min_skill = data.get("min_skill", data.get("min_mmr"))
     if "max_skill" in data or "max_mmr" in data:
         settings.max_skill = data.get("max_skill", data.get("max_mmr"))
+    if "skill_filters" in data:
+        raw_filters = data.get("skill_filters") or []
+        cleaned = []
+        for item in raw_filters:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("kind")
+            if not kind or kind not in rating_kinds(game):
+                continue
+            cleaned.append({
+                "kind": kind,
+                "min": item.get("min"),
+                "max": item.get("max"),
+            })
+        settings.skill_filters = cleaned or None
+        if cleaned:
+            primary = cleaned[0]
+            settings.wanted_rating_kind = primary["kind"]
+            settings.min_skill = primary.get("min")
+            settings.max_skill = primary.get("max")
     if not settings.wanted_rating_kind:
         kinds = [kind for kind, _ in ratings] or rating_kinds(game)
         settings.wanted_rating_kind = kinds[0] if kinds else None
@@ -453,17 +473,29 @@ def _apply_search_filters(stmt, settings: SearchSettings | None, candidate, my_k
             stmt = stmt.where(User.age <= settings.max_age)
         if settings.wanted_roles:
             stmt = stmt.where(candidate.roles.overlap(settings.wanted_roles))
-        kind = settings.wanted_rating_kind
-        if kind:
-            rating_conds = [
-                GameRating.profile_id == candidate.id,
-                GameRating.kind == kind,
-            ]
-            if settings.min_skill is not None:
-                rating_conds.append(GameRating.value >= settings.min_skill)
-            if settings.max_skill is not None:
-                rating_conds.append(GameRating.value <= settings.max_skill)
-            stmt = stmt.where(exists().where(and_(*rating_conds)))
+
+        filters = list(settings.skill_filters or [])
+        if not filters and settings.wanted_rating_kind:
+            filters = [{
+                "kind": settings.wanted_rating_kind,
+                "min": settings.min_skill,
+                "max": settings.max_skill,
+            }]
+
+        active = [item for item in filters if item and item.get("kind")]
+        if active:
+            or_conds = []
+            for item in active:
+                rating_conds = [
+                    GameRating.profile_id == candidate.id,
+                    GameRating.kind == item["kind"],
+                ]
+                if item.get("min") is not None:
+                    rating_conds.append(GameRating.value >= item["min"])
+                if item.get("max") is not None:
+                    rating_conds.append(GameRating.value <= item["max"])
+                or_conds.append(exists().where(and_(*rating_conds)))
+            stmt = stmt.where(or_(*or_conds))
             return stmt
     if my_kinds:
         stmt = stmt.where(exists().where(

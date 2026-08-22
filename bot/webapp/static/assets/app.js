@@ -35,11 +35,113 @@ function formatSkill(spec, value) {
   const option = (spec.options || []).find((item) => Number(item.id) === Number(value));
   if (option) return option.label;
   if (spec.kind === "faceit") return `lvl ${value}`;
-  return Number(value).toLocaleString("ru-RU");
+  const text = Number(value).toLocaleString("ru-RU");
+  if (spec.open_ended && Number(value) >= Number(spec.max)) return `${text}+`;
+  return text;
+}
+
+function ratingPrompt(kind) {
+  if (kind === "faceit") return "Какой у тебя уровень фейсита?";
+  if (kind === "premier") return "Какой у тебя рейтинг в премьере?";
+  if (kind === "competitive") return "Какое у тебя звание в матчмейкинге?";
+  const item = ratingOf(kind);
+  return item?.label || "Рейтинг";
+}
+
+function valueRatingKinds(kinds, game = currentGame()) {
+  return (kinds || []).filter((kind) => {
+    const item = ratingOf(kind, game);
+    return item && !item.no_value;
+  });
+}
+
+function rulesLink(id = "open-rules") {
+  return `<button type="button" class="link-muted" id="${id}">Правила</button>`;
+}
+
+async function openRules() {
+  const rules = await api("/api/rules");
+  alert(rules.text);
+}
+
+function bindRulesLinks(root) {
+  root.querySelectorAll("#open-rules, #open-rules-photo, #rules").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await openRules();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  });
+}
+
+function skillFilterBounds(form, kind, item) {
+  const saved = (form.skill_filters || []).find((entry) => entry.kind === kind);
+  if (saved) {
+    return {
+      min: saved.min == null ? item.min : saved.min,
+      max: saved.max == null ? item.max : saved.max,
+    };
+  }
+  if (form.wanted_rating_kind === kind) {
+    const minSkill = form.min_skill ?? form.min_mmr;
+    const maxSkill = form.max_skill ?? form.max_mmr;
+    return {
+      min: minSkill == null ? item.min : minSkill,
+      max: maxSkill == null ? item.max : maxSkill,
+    };
+  }
+  return { min: item.min, max: item.max };
+}
+
+function skillFiltersHtml(kinds, form, game = currentGame()) {
+  return valueRatingKinds(kinds, game)
+    .map((kind) => {
+      const item = ratingOf(kind, game);
+      if (!item) return "";
+      const bounds = skillFilterBounds(form, kind, item);
+      return dualSliderField({
+        minId: `min_skill_${kind}`,
+        maxId: `max_skill_${kind}`,
+        label: item.label,
+        min: item.min,
+        max: item.max,
+        step: item.step,
+        minValue: bounds.min ?? item.min,
+        maxValue: bounds.max ?? item.max,
+        format: (v) => formatSkill(item, v),
+        fmt: item.kind,
+      });
+    })
+    .join("");
+}
+
+function readSkillFilters(root, kinds, game = currentGame()) {
+  return valueRatingKinds(kinds, game)
+    .map((kind) => {
+      const item = ratingOf(kind, game);
+      if (!item) return null;
+      const minEl = root.querySelector(`#min_skill_${kind}`);
+      const maxEl = root.querySelector(`#max_skill_${kind}`);
+      if (!minEl || !maxEl) return null;
+      const filtered = dualFilterPayload(Number(minEl.value), Number(maxEl.value), item.min, item.max);
+      return { kind, min: filtered.min, max: filtered.max };
+    })
+    .filter(Boolean);
+}
+
+function formatSkillFilterSummary(entry) {
+  const item = ratingOf(entry.kind);
+  if (!item) return null;
+  const lo = entry.min == null ? item.min : entry.min;
+  const hi = entry.max == null ? item.max : entry.max;
+  if (entry.min == null && entry.max == null) return null;
+  return `${item.label}: ${formatSkill(item, lo)}–${formatSkill(item, hi)}`;
 }
 
 const AGE_MIN = 12;
-const AGE_MAX = 60;
+const AGE_MAX = 50;
 
 function formatAge(value) {
   return Number(value) >= AGE_MAX ? `${AGE_MAX}+` : String(value);
@@ -51,7 +153,7 @@ function formatAgeRange(min, max) {
   if (lo && hi) return `${lo}–${hi}`;
   if (lo) return `от ${lo}`;
   if (hi) return `до ${hi}`;
-  if (max != null && max >= AGE_MAX) return "до 60+";
+  if (max != null && max >= AGE_MAX) return `до ${AGE_MAX}+`;
   return null;
 }
 const REPORT_REASONS = [
@@ -61,7 +163,7 @@ const REPORT_REASONS = [
   { id: "political", label: "Политика и разжигание ненависти" },
 ];
 const MMR_MIN = 0;
-const MMR_MAX = 20000;
+const MMR_MAX = 10000;
 const MMR_STEP = 100;
 
 function formatMmr(value) {
@@ -113,8 +215,10 @@ function dualSliderField({
         <label>${label}</label>
         <strong><span data-for="${minId}">${format(lo)}</span>–<span data-for="${maxId}">${format(hi)}</span></strong>
       </div>
-      <input type="range" id="${minId}" min="${min}" max="${max}" step="${step}" value="${lo}" data-fmt="${escapeHtml(fmt)}" aria-label="Мин. ${label}" />
-      <input type="range" id="${maxId}" min="${min}" max="${max}" step="${step}" value="${hi}" data-fmt="${escapeHtml(fmt)}" aria-label="Макс. ${label}" />
+      <div class="dual-track">
+        <input type="range" id="${minId}" min="${min}" max="${max}" step="${step}" value="${lo}" data-fmt="${escapeHtml(fmt)}" aria-label="Мин. ${label}" />
+        <input type="range" id="${maxId}" min="${min}" max="${max}" step="${step}" value="${hi}" data-fmt="${escapeHtml(fmt)}" aria-label="Макс. ${label}" />
+      </div>
     </div>`;
 }
 
@@ -510,6 +614,7 @@ function emptyRegister(game = "dota", mode = "full") {
     max_age: AGE_MAX,
     min_skill: first?.min ?? 0,
     max_skill: first?.max ?? 0,
+    skill_filters: [],
     _sources: sources,
   };
 }
@@ -531,8 +636,8 @@ function registerSteps(r) {
       id: "game",
       render: () => `
         <div class="panel stack">
-          <h2>Игра</h2>
-          <p class="muted">Потом можно добавить ещё одну анкету</p>
+          <h2>Для какой игры хочешь создать анкету?</h2>
+          <p class="muted">Потом сможешь добавить другие игры</p>
           <div class="pos-grid" data-pick="game">
             ${catalog()
               .map(
@@ -562,8 +667,8 @@ function registerSteps(r) {
       id: "name",
       render: () => `
         <div class="panel stack">
-          <h2>Имя</h2>
-          <div class="field"><input id="name" maxlength="50" value="${escapeHtml(r.name)}" placeholder="Как тебя зовут" /></div>
+          <h2>Как тебя зовут?</h2>
+          <div class="field"><input id="name" maxlength="50" value="${escapeHtml(r.name)}" /></div>
           <button class="btn btn-primary btn-block" id="next">Дальше</button>
         </div>`,
       validate: (root) => {
@@ -595,7 +700,8 @@ function registerSteps(r) {
       id: "city",
       render: () => `
         <div class="panel stack">
-          <h2>Город</h2>
+          <h2>В каком городе живешь?</h2>
+          <p class="muted">При поиске у игроков из твоего города приоритет</p>
           <div class="field"><input id="city" maxlength="50" value="${escapeHtml(r.city)}" placeholder="Москва" /></div>
           <button class="btn btn-primary btn-block" id="next">Дальше</button>
         </div>`,
@@ -639,27 +745,12 @@ function registerSteps(r) {
     });
   }
 
-  steps.push({
-    id: "roles",
-    render: () => `
-      <div class="panel stack">
-        <h2>Твои роли</h2>
-        ${posButtons(r.roles, "roles", spec.roles)}
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    bind: (root) => bindPos(root, "roles", r.roles),
-    validate: () => {
-      if (!r.roles.length) throw new Error("Выбери роли");
-    },
-  });
-
   if (spec.multi_rating) {
     steps.push({
       id: "queues",
       render: () => `
         <div class="panel stack">
-          <h2>Где играешь</h2>
-          <p class="muted">Можно выбрать несколько — рейтинг спросим отдельно</p>
+          <h2>Где играешь?</h2>
           <div class="pos-grid" data-pos="queues">
             ${spec.ratings
               .map(
@@ -691,33 +782,40 @@ function registerSteps(r) {
   }
 
   steps.push({
-    id: "ratings",
-    render: () => {
-      const kinds = r.rating_kinds.length ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
-      return `
+    id: "roles",
+    render: () => `
+      <div class="panel stack">
+        <h2>На каких ролях обычно играешь?</h2>
+        ${spec.multi_rating ? `<p class="muted">Конечно, кому это надо, но вдруг тут профики собрались 😅</p>` : ""}
+        ${posButtons(r.roles, "roles", spec.roles)}
+        <button class="btn btn-primary btn-block" id="next">Дальше</button>
+      </div>`,
+    bind: (root) => bindPos(root, "roles", r.roles),
+    validate: () => {
+      if (!r.roles.length) throw new Error("Выбери роли");
+    },
+  });
+
+  const ratingKindsForStep = () =>
+    spec.multi_rating ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
+  const valueKindsForStep = () => valueRatingKinds(ratingKindsForStep(), r.game);
+
+  if (!spec.multi_rating || valueKindsForStep().length) {
+    steps.push({
+      id: "ratings",
+      render: () => {
+        const kinds = valueKindsForStep();
+        const title = spec.multi_rating ? "Теперь определимся с уровнем игры" : "Рейтинг";
+        return `
         <div class="panel stack">
-          <h2>Рейтинг</h2>
+          <h2>${title}</h2>
           ${kinds
             .map((kind) => {
               const item = ratingOf(kind, r.game);
-              if (!item) return "";
-              if (item.options?.length) {
-                return `
-                  <div class="field">
-                    <label>${escapeHtml(item.label)}</label>
-                    <select id="rating-${item.kind}">
-                      ${item.options
-                        .map(
-                          (opt) => `
-                        <option value="${opt.id}" ${Number(r.ratings[item.kind]) === Number(opt.id) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
-                        )
-                        .join("")}
-                    </select>
-                  </div>`;
-              }
+              if (!item || item.no_value) return "";
               return sliderField({
                 id: `rating-${item.kind}`,
-                label: item.label,
+                label: spec.multi_rating ? ratingPrompt(item.kind) : item.label,
                 min: item.min,
                 max: item.max,
                 step: item.step,
@@ -729,26 +827,49 @@ function registerSteps(r) {
             .join("")}
           <button class="btn btn-primary btn-block" id="next">Дальше</button>
         </div>`;
-    },
-    validate: (root) => {
-      const kinds = r.rating_kinds.length ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
-      for (const kind of kinds) {
-        const field = root.querySelector(`#rating-${kind}`);
-        if (!field) continue;
-        r.ratings[kind] = String(field.value);
-      }
-    },
-  });
+      },
+      validate: (root) => {
+        const kinds = ratingKindsForStep();
+        for (const kind of kinds) {
+          const item = ratingOf(kind, r.game);
+          if (item?.no_value) {
+            r.ratings[kind] = String(item.default ?? 0);
+            continue;
+          }
+          const field = root.querySelector(`#rating-${kind}`);
+          if (!field) continue;
+          r.ratings[kind] = String(field.value);
+        }
+      },
+    });
+  } else {
+    steps.push({
+      id: "ratings",
+      render: () => `
+        <div class="panel stack">
+          <h2>Теперь определимся с уровнем игры</h2>
+          <p class="muted">Для пабликов рейтинг не нужен</p>
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      validate: () => {
+        for (const kind of ratingKindsForStep()) {
+          const item = ratingOf(kind, r.game);
+          if (item?.no_value) r.ratings[kind] = String(item.default ?? 0);
+        }
+      },
+    });
+  }
 
   steps.push({
     id: "bio",
     render: () => `
       <div class="panel stack">
-        <h2>О себе</h2>
-        <p class="muted">Только для анкеты ${escapeHtml(spec.label)}</p>
+        <h2>Расскажи о себе</h2>
+        <p class="muted">Можешь оставить поле пустым, но разве это интересно? · ${rulesLink("open-rules")}</p>
         <div class="field"><textarea id="bio" maxlength="500">${escapeHtml(r.bio)}</textarea></div>
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
+    bind: (root) => bindRulesLinks(root),
     validate: (root) => {
       r.bio = root.querySelector("#bio").value.trim();
     },
@@ -758,35 +879,22 @@ function registerSteps(r) {
     id: "photo",
     render: () => `
       <div class="panel stack">
-        <h2>Фото</h2>
-        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(r.photo_preview)}" alt="" /></div>` : `<p class="muted">Загрузи фото анкеты</p>`}
-        <label class="btn btn-ghost btn-block file-btn">Выбрать фото<input type="file" id="photo" accept="image/*" /></label>
+        <h2>Загрузи фотографию для анкеты</h2>
+        <p class="muted">Не обязательно себя, можно какой-нибудь мем, только не нарушай правила! · ${rulesLink("open-rules-photo")}</p>
+        ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(r.photo_preview)}" alt="" /></div>` : ""}
+        <label class="btn btn-ghost btn-block file-btn">${r.photo_file_id ? "Сменить фото" : "Выбрать фото"}<input type="file" id="photo" accept="image/*" /></label>
         <button class="btn btn-primary btn-block" id="next" ${r.photo_file_id ? "" : "disabled"}>Дальше</button>
       </div>`,
+    bind: (root) => bindRulesLinks(root),
   });
 
-  const searchSpec = ratingOf(r.wanted_rating_kind || spec.ratings?.[0]?.kind, r.game) || spec.ratings?.[0];
+  const filterKinds = () =>
+    spec.multi_rating ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
   steps.push({
     id: "filters",
     render: () => `
       <div class="panel stack">
-        <h2>Кого ищем</h2>
-        <p class="muted">Можно оставить как есть — без жёстких фильтров</p>
-        ${posButtons(r.wanted_roles, "wanted", spec.roles)}
-        ${
-          spec.multi_rating
-            ? `<div class="field"><label>Очередь</label>
-                <div class="pos-grid" data-pos="search-kind">
-                  ${spec.ratings
-                    .map(
-                      (item) => `
-                    <button type="button" data-kind="${item.kind}" class="${r.wanted_rating_kind === item.kind ? "on" : ""}">${escapeHtml(item.label)}</button>`
-                    )
-                    .join("")}
-                </div>
-              </div>`
-            : ""
-        }
+        <h2>Теперь настроим поиск</h2>
         ${dualSliderField({
           minId: "min_age",
           maxId: "max_age",
@@ -798,37 +906,25 @@ function registerSteps(r) {
           format: formatAge,
           fmt: "age",
         })}
-        ${
-          searchSpec
-            ? dualSliderField({
-                minId: "min_skill",
-                maxId: "max_skill",
-                label: searchSpec.label,
-                min: searchSpec.min,
-                max: searchSpec.max,
-                step: searchSpec.step,
-                minValue: r.min_skill ?? searchSpec.min,
-                maxValue: r.max_skill ?? searchSpec.max,
-                format: (v) => formatSkill(searchSpec, v),
-                fmt: searchSpec.kind,
-              })
-            : ""
-        }
+        <div class="field">
+          <label>Роли</label>
+          ${posButtons(r.wanted_roles, "wanted", spec.roles)}
+        </div>
+        ${skillFiltersHtml(filterKinds(), r, r.game)}
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
     bind: (root) => {
       bindPos(root, "wanted", r.wanted_roles);
-      root.querySelectorAll("[data-pos=search-kind] button").forEach((btn) => {
-        btn.onclick = () => {
-          r.wanted_rating_kind = btn.dataset.kind;
-          const next = ratingOf(r.wanted_rating_kind, r.game);
-          if (next) {
-            r.min_skill = next.min;
-            r.max_skill = next.max;
-          }
-          render();
-        };
-      });
+    },
+    validate: (root) => {
+      r.min_age = readRangeValue(root, "min_age");
+      r.max_age = readRangeValue(root, "max_age");
+      r.skill_filters = readSkillFilters(root, filterKinds(), r.game);
+      if (r.skill_filters.length) {
+        r.wanted_rating_kind = r.skill_filters[0].kind;
+        r.min_skill = r.skill_filters[0].min ?? ratingOf(r.wanted_rating_kind, r.game)?.min;
+        r.max_skill = r.skill_filters[0].max ?? ratingOf(r.wanted_rating_kind, r.game)?.max;
+      }
     },
   });
 
@@ -915,24 +1011,22 @@ function renderRegister() {
       try {
         current.validate?.(root);
         const spec = gameSpec(r.game);
-        const searchSpec = ratingOf(r.wanted_rating_kind || spec?.ratings?.[0]?.kind, r.game);
         const ageFilter = dualFilterPayload(
           readRangeValue(root, "min_age"),
           readRangeValue(root, "max_age"),
           AGE_MIN,
           AGE_MAX
         );
-        const skillFilter = searchSpec
-          ? dualFilterPayload(
-              readRangeValue(root, "min_skill"),
-              readRangeValue(root, "max_skill"),
-              searchSpec.min,
-              searchSpec.max
-            )
-          : { min: null, max: null };
-        const kinds = r.rating_kinds.length ? r.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
+        const kinds = r.rating_kinds.length
+          ? r.rating_kinds
+          : (spec?.multi_rating ? [] : (spec?.ratings || []).map((item) => item.kind));
+        const skillFilters = r.skill_filters?.length
+          ? r.skill_filters
+          : readSkillFilters(root, kinds, r.game);
         const ratings = kinds
           .map((kind) => {
+            const item = ratingOf(kind, r.game);
+            if (item?.no_value) return { kind, value: Number(item.default ?? 0) };
             const raw = r.ratings[kind];
             const value = Number(raw);
             if (raw === "" || raw == null || Number.isNaN(value)) return null;
@@ -940,17 +1034,19 @@ function renderRegister() {
           })
           .filter(Boolean);
         if (!ratings.length) throw new Error("Укажи рейтинг");
+        const primary = skillFilters[0];
         const payload = {
           game: r.game,
           roles: r.roles,
           ratings,
           bio: r.bio || "",
           wanted_roles: r.wanted_roles,
-          wanted_rating_kind: r.wanted_rating_kind || searchSpec?.kind || null,
+          wanted_rating_kind: primary?.kind || r.wanted_rating_kind || ratings[0]?.kind || null,
           min_age: ageFilter.min,
           max_age: ageFilter.max,
-          min_skill: skillFilter.min,
-          max_skill: skillFilter.max,
+          min_skill: primary ? primary.min : null,
+          max_skill: primary ? primary.max : null,
+          skill_filters: skillFilters,
         };
         if (r.name) payload.name = r.name;
         if (r.age) payload.age = Number(r.age);
@@ -1356,15 +1452,27 @@ async function renderProfile() {
     .map((id) => (spec?.roles || []).find((x) => x.id === id)?.label)
     .filter(Boolean)
     .join(", ");
-  const searchSpec = ratingOf(s.wanted_rating_kind);
-  const skillLabel = searchSpec?.label || "Рейтинг";
-  const minSkill = s.min_skill ?? s.min_mmr;
-  const maxSkill = s.max_skill ?? s.max_mmr;
+  const skillBits = (s.skill_filters || [])
+    .map(formatSkillFilterSummary)
+    .filter(Boolean);
+  if (!skillBits.length) {
+    const searchSpec = ratingOf(s.wanted_rating_kind);
+    const minSkill = s.min_skill ?? s.min_mmr;
+    const maxSkill = s.max_skill ?? s.max_mmr;
+    if (searchSpec && (minSkill != null || maxSkill != null)) {
+      skillBits.push(
+        formatSkillFilterSummary({
+          kind: s.wanted_rating_kind,
+          min: minSkill,
+          max: maxSkill,
+        })
+      );
+    }
+  }
   const filters = [
-    wanted ? `Роли: ${wanted}` : "Роли: любые",
     s.min_age || s.max_age ? `Возраст: ${formatAgeRange(s.min_age, s.max_age) ?? "—"}` : null,
-    minSkill || maxSkill ? `${skillLabel}: ${minSkill ?? "—"}–${maxSkill ?? "—"}` : null,
-    s.wanted_rating_kind && searchSpec ? `Очередь: ${searchSpec.label}` : null,
+    wanted ? `Роли: ${wanted}` : "Роли: любые",
+    ...skillBits,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1413,14 +1521,17 @@ async function renderProfile() {
   };
   root.querySelector("#settings").onclick = () => {
     const s = state.me.profile.settings || {};
-    const search = ratingOf(s.wanted_rating_kind) || spec?.ratings?.[0];
+    const profile = state.me.profile;
+    const kinds = (profile.ratings || []).map((item) => item.kind);
     state.settingsForm = {
       wanted_roles: [...(s.wanted_roles || s.wanted_positions || [])],
-      wanted_rating_kind: s.wanted_rating_kind || search?.kind || "",
+      wanted_rating_kind: s.wanted_rating_kind || kinds[0] || "",
       min_age: s.min_age ?? AGE_MIN,
       max_age: s.max_age ?? AGE_MAX,
-      min_skill: s.min_skill ?? s.min_mmr ?? search?.min ?? 0,
-      max_skill: s.max_skill ?? s.max_mmr ?? search?.max ?? 0,
+      min_skill: s.min_skill ?? s.min_mmr,
+      max_skill: s.max_skill ?? s.max_mmr,
+      skill_filters: [...(s.skill_filters || [])],
+      rating_kinds: kinds,
     };
     state.profileView = "settings";
     render();
@@ -1440,8 +1551,7 @@ async function renderProfile() {
   };
   root.querySelector("#rules").onclick = async () => {
     try {
-      const rules = await api("/api/rules");
-      alert(rules.text);
+      await openRules();
     } catch (e) {
       toast(e.message);
     }
@@ -1503,24 +1613,10 @@ function renderRatingFields(kinds, values, game = currentGame()) {
   return kinds
     .map((kind) => {
       const item = ratingOf(kind, game);
-      if (!item) return "";
-      if (item.options?.length) {
-        return `
-          <div class="field">
-            <label>${escapeHtml(item.label)}</label>
-            <select id="rating-${item.kind}">
-              ${item.options
-                .map(
-                  (opt) => `
-                <option value="${opt.id}" ${Number(values[item.kind]) === Number(opt.id) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
-                )
-                .join("")}
-            </select>
-          </div>`;
-      }
+      if (!item || item.no_value) return "";
       return sliderField({
         id: `rating-${item.kind}`,
-        label: item.label,
+        label: gameSpec(game)?.multi_rating ? ratingPrompt(item.kind) : item.label,
         min: item.min,
         max: item.max,
         step: item.step,
@@ -1550,7 +1646,7 @@ function renderEditProfile() {
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
       <h2>${escapeHtml(spec?.label || "Анкета")}</h2>
-      <div class="field"><label>Имя</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
+      <div class="field"><label>Как тебя зовут?</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
       ${sliderField({
         id: "age",
         label: "Возраст",
@@ -1560,10 +1656,14 @@ function renderEditProfile() {
         format: formatAge,
         fmt: "age",
       })}
-      <div class="field"><label>Город</label><input id="city" maxlength="50" value="${escapeHtml(e.city)}" /></div>
+      <div class="field">
+        <label>В каком городе живешь?</label>
+        <p class="muted" style="margin:0 0 8px">При поиске у игроков из твоего города приоритет</p>
+        <input id="city" maxlength="50" value="${escapeHtml(e.city)}" />
+      </div>
       ${
         spec?.multi_rating
-          ? `<div class="field"><label>Где играешь</label>
+          ? `<div class="field"><label>Где играешь?</label>
               <div class="pos-grid" data-pos="edit-queues">
                 ${(spec.ratings || [])
                   .map(
@@ -1575,11 +1675,20 @@ function renderEditProfile() {
             </div>`
           : ""
       }
-      ${renderRatingFields(kinds, e.ratings || {})}
-      <div class="field"><label>Роли</label>${posButtons(e.roles, "edit-pos", spec?.roles)}</div>
-      <div class="field"><label>О себе</label><textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea></div>
       <div class="field">
-        <label>Фото</label>
+        <label>На каких ролях обычно играешь?</label>
+        ${spec?.multi_rating ? `<p class="muted" style="margin:0 0 8px">Конечно, кому это надо, но вдруг тут профики собрались 😅</p>` : ""}
+        ${posButtons(e.roles, "edit-pos", spec?.roles)}
+      </div>
+      ${renderRatingFields(kinds, e.ratings || {})}
+      <div class="field">
+        <label>Расскажи о себе</label>
+        <p class="muted" style="margin:0 0 8px">Можешь оставить поле пустым, но разве это интересно? · ${rulesLink("open-rules")}</p>
+        <textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea>
+      </div>
+      <div class="field">
+        <label>Загрузи фотографию для анкеты</label>
+        <p class="muted" style="margin:0 0 8px">Не обязательно себя, можно какой-нибудь мем, только не нарушай правила! · ${rulesLink("open-rules-photo")}</p>
         ${
           e.photo_preview
             ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(e.photo_preview)}" alt="" /></div>`
@@ -1593,6 +1702,7 @@ function renderEditProfile() {
   bindNav(root);
   bindPos(root, "edit-pos", e.roles);
   bindSliders(root);
+  bindRulesLinks(root);
   root.querySelectorAll("[data-pos=edit-queues] button").forEach((btn) => {
     btn.onclick = () => {
       const kind = btn.dataset.kind;
@@ -1634,6 +1744,11 @@ function renderEditProfile() {
       e.bio = root.querySelector("#bio").value.trim();
       const selected = e.rating_kinds?.length ? e.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
       for (const kind of selected) {
+        const item = ratingOf(kind);
+        if (item?.no_value) {
+          e.ratings[kind] = String(item.default ?? 0);
+          continue;
+        }
         const field = root.querySelector(`#rating-${kind}`);
         if (field) e.ratings[kind] = String(field.value);
       }
@@ -1679,7 +1794,9 @@ function renderSearchSettings() {
     return renderProfile();
   }
   const spec = gameSpec();
-  const searchSpec = ratingOf(f.wanted_rating_kind, currentGame()) || spec?.ratings?.[0];
+  const kinds = f.rating_kinds?.length
+    ? f.rating_kinds
+    : (spec?.ratings || []).map((item) => item.kind);
 
   root.innerHTML = shell(
     "Поиск",
@@ -1688,23 +1805,7 @@ function renderSearchSettings() {
       <div class="row">
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
-      <h2>Настройки поиска</h2>
-      <p class="muted" style="margin:0">Крайние значения = без ограничения</p>
-      <div class="field"><label>Ищем роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
-      ${
-        spec?.multi_rating
-          ? `<div class="field"><label>Очередь</label>
-              <div class="pos-grid" data-pos="search-kind">
-                ${(spec.ratings || [])
-                  .map(
-                    (item) => `
-                  <button type="button" data-kind="${item.kind}" class="${f.wanted_rating_kind === item.kind ? "on" : ""}">${escapeHtml(item.label)}</button>`
-                  )
-                  .join("")}
-              </div>
-            </div>`
-          : ""
-      }
+      <h2>Теперь настроим поиск</h2>
       ${dualSliderField({
         minId: "min_age",
         maxId: "max_age",
@@ -1716,39 +1817,14 @@ function renderSearchSettings() {
         format: formatAge,
         fmt: "age",
       })}
-      ${
-        searchSpec
-          ? dualSliderField({
-              minId: "min_skill",
-              maxId: "max_skill",
-              label: searchSpec.label,
-              min: searchSpec.min,
-              max: searchSpec.max,
-              step: searchSpec.step,
-              minValue: f.min_skill,
-              maxValue: f.max_skill,
-              format: (v) => formatSkill(searchSpec, v),
-              fmt: searchSpec.kind,
-            })
-          : ""
-      }
+      <div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
+      ${skillFiltersHtml(kinds, f)}
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
     </div>`
   );
   bindNav(root);
   bindPos(root, "want-pos", f.wanted_roles);
   bindSliders(root);
-  root.querySelectorAll("[data-pos=search-kind] button").forEach((btn) => {
-    btn.onclick = () => {
-      f.wanted_rating_kind = btn.dataset.kind;
-      const next = ratingOf(f.wanted_rating_kind);
-      if (next) {
-        f.min_skill = next.min;
-        f.max_skill = next.max;
-      }
-      render();
-    };
-  });
 
   root.querySelector("#back").onclick = () => {
     state.profileView = "main";
@@ -1764,25 +1840,20 @@ function renderSearchSettings() {
         AGE_MIN,
         AGE_MAX
       );
-      const skillFilter = searchSpec
-        ? dualFilterPayload(
-            readRangeValue(root, "min_skill"),
-            readRangeValue(root, "max_skill"),
-            searchSpec.min,
-            searchSpec.max
-          )
-        : { min: null, max: null };
+      const skillFilters = readSkillFilters(root, kinds);
+      const primary = skillFilters[0];
 
       await api("/api/profile/settings", {
         method: "PATCH",
         body: JSON.stringify({
           game: currentGame(),
           wanted_roles: f.wanted_roles,
-          wanted_rating_kind: f.wanted_rating_kind || searchSpec?.kind,
+          wanted_rating_kind: primary?.kind || f.wanted_rating_kind || kinds[0],
           min_age: ageFilter.min,
           max_age: ageFilter.max,
-          min_skill: skillFilter.min,
-          max_skill: skillFilter.max,
+          min_skill: primary ? primary.min : null,
+          max_skill: primary ? primary.max : null,
+          skill_filters: skillFilters,
         }),
       });
       await refreshMe();

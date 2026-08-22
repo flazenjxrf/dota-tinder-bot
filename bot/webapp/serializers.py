@@ -43,6 +43,13 @@ def serialize_settings(profile: GameProfile | None) -> dict | None:
     if not profile or not profile.settings:
         return None
     settings = profile.settings
+    skill_filters = list(settings.skill_filters or [])
+    if not skill_filters and settings.wanted_rating_kind:
+        skill_filters = [{
+            "kind": settings.wanted_rating_kind,
+            "min": settings.min_skill,
+            "max": settings.max_skill,
+        }]
     return {
         "wanted_roles": list(settings.wanted_roles or []),
         "wanted_positions": list(settings.wanted_roles or []),
@@ -53,6 +60,7 @@ def serialize_settings(profile: GameProfile | None) -> dict | None:
         "max_skill": settings.max_skill,
         "min_mmr": settings.min_skill,
         "max_mmr": settings.max_skill,
+        "skill_filters": skill_filters,
     }
 
 

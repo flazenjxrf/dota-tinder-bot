@@ -430,6 +430,22 @@ async def update_settings(body: SettingsUpdateBody, user: WebAppUser = CurrentUs
         data["min_skill"] = data.pop("min_mmr")
     if "max_mmr" in data and "max_skill" not in data:
         data["max_skill"] = data.pop("max_mmr")
+    if "skill_filters" in data:
+        cleaned = []
+        for item in data.get("skill_filters") or []:
+            kind = item.get("kind") if isinstance(item, dict) else None
+            if not kind or kind not in rating_kinds(resolved):
+                continue
+            cleaned.append({
+                "kind": kind,
+                "min": item.get("min"),
+                "max": item.get("max"),
+            })
+        data["skill_filters"] = cleaned or None
+        if cleaned:
+            data["wanted_rating_kind"] = cleaned[0]["kind"]
+            data["min_skill"] = cleaned[0].get("min")
+            data["max_skill"] = cleaned[0].get("max")
 
     for field, value in data.items():
         await update_settings_field(user.id, field, value, resolved)
@@ -533,26 +549,32 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
         raise HTTPException(status_code=400, detail="Неизвестная шкала поиска")
 
     try:
+        save_data = {
+            "game": game,
+            "name": name,
+            "age": age,
+            "city": city,
+            "roles": roles,
+            "ratings": ratings,
+            "bio": bio.strip(),
+            "photo_id": photo,
+            "photo_file_id": photo,
+            "wanted_roles": wanted or None,
+            "wanted_rating_kind": wanted_kind,
+            "min_age": body.min_age,
+            "max_age": body.max_age,
+            "min_skill": body.min_skill if body.min_skill is not None else body.min_mmr,
+            "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
+        }
+        if body.skill_filters is not None:
+            save_data["skill_filters"] = [
+                {"kind": item.kind, "min": item.min, "max": item.max}
+                for item in body.skill_filters
+            ]
         await save_user_and_settings(
             user.id,
             user.username,
-            {
-                "game": game,
-                "name": name,
-                "age": age,
-                "city": city,
-                "roles": roles,
-                "ratings": ratings,
-                "bio": bio.strip(),
-                "photo_id": photo,
-                "photo_file_id": photo,
-                "wanted_roles": wanted or None,
-                "wanted_rating_kind": wanted_kind,
-                "min_age": body.min_age,
-                "max_age": body.max_age,
-                "min_skill": body.min_skill if body.min_skill is not None else body.min_mmr,
-                "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
-            },
+            save_data,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

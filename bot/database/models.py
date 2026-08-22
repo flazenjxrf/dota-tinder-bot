@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint, text
+from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint, text, JSON
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 import enum
@@ -218,6 +218,7 @@ class SearchSettings(Base):
     wanted_rating_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
     min_skill: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_skill: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    skill_filters: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     profile = relationship("GameProfile", back_populates="settings")
 

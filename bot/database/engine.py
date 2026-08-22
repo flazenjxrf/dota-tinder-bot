@@ -263,9 +263,13 @@ async def _ensure_multi_game_schema(conn) -> None:
             wanted_roles INTEGER[],
             wanted_rating_kind VARCHAR(30),
             min_skill INTEGER,
-            max_skill INTEGER
+            max_skill INTEGER,
+            skill_filters JSONB
         )
     """))
+    await conn.execute(text(
+        "ALTER TABLE game_search_settings ADD COLUMN IF NOT EXISTS skill_filters JSONB"
+    ))
 
     await conn.execute(text(
         "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
