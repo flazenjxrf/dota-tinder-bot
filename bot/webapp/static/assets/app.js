@@ -11,6 +11,10 @@ function catalog() {
 }
 
 function currentGame() {
+  // Во время полной регистрации выбранная игра важнее me.current_game (иначе сброс на dota).
+  if (state.me?.needs_registration && state.register?.game) {
+    return state.register.game;
+  }
   return state.me?.current_game || state.register?.game || "dota";
 }
 
@@ -546,6 +550,7 @@ function registerSteps(r) {
             next.age = r.age;
             next.city = r.city;
             next.step = r.step;
+            next._started = true;
             state.register = next;
             render();
           };

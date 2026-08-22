@@ -44,6 +44,7 @@ async def send_miniapp_prompt(message: Message):
 async def cmd_start(message: Message):
     user = await get_user_with_settings(message.from_user.id)
 
+    # Зарегистрированные: согласие в чате (если протухло), иначе Mini App
     if user and user.status != ProfileStatus.INCOMPLETE:
         if not await has_user_consented(message.from_user.id):
             await message.answer(CONSENT_TEXT, reply_markup=get_consent_keyboard())
@@ -54,11 +55,8 @@ async def cmd_start(message: Message):
         mark_keyboard_cleared(message.from_user.id)
         return
 
-    if await has_user_consented(message.from_user.id):
-        await send_miniapp_prompt(message)
-        return
-
-    await message.answer(CONSENT_TEXT, reply_markup=get_consent_keyboard())
+    # Новые / неполная анкета: согласие на ПДн и регистрация — в Mini App
+    await send_miniapp_prompt(message)
 
 
 @router.callback_query(F.data == "accept_consent")
@@ -89,9 +87,6 @@ async def accept_consent(callback: CallbackQuery, state: FSMContext):
 async def cmd_menu(message: Message):
     user = await get_user_with_settings(message.from_user.id)
     if not user or user.status == ProfileStatus.INCOMPLETE:
-        if not await has_user_consented(message.from_user.id):
-            await message.answer("Сначала прими соглашение через /start")
-            return
         await send_miniapp_prompt(message)
         return
     await hide_reply_keyboard(message)

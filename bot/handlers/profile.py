@@ -26,10 +26,8 @@ from bot.keyboards.inline import (
     get_search_positions_keyboard,
     SearchPositionCallback,
     get_delete_profile_confirm_keyboard,
-    get_consent_keyboard,
     get_webapp_keyboard,
 )
-from bot.middleware.consent import CONSENT_TEXT
 from bot.utils.bot_commands import CMD_PROFILE
 from bot.utils.city import format_city_display
 from bot.utils.reputation import format_reputation_line_from_counts
@@ -240,10 +238,12 @@ async def profile_delete_confirm(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "🗑 <b>Анкета удалена.</b>\n\n"
         "Мэтчи, лайки и все данные профиля удалены.\n"
-        "Чтобы создать новую анкету, сначала прими соглашение:",
+        "Согласие на обработку данных и новую анкету — в Mini App:",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await callback.message.answer(CONSENT_TEXT, reply_markup=get_consent_keyboard())
+    kb = get_webapp_keyboard()
+    if kb:
+        await callback.message.answer("📱 Mini App", reply_markup=kb)
     await callback.answer()
 
 
