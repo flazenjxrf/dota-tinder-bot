@@ -1,12 +1,23 @@
+import logging
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
 from bot.config import DATABASE_URL, DB_ECHO
 from bot.database.models import Base
 
-engine = create_async_engine(DATABASE_URL, echo=DB_ECHO)
+logger = logging.getLogger(__name__)
+
+# pool_pre_ping: Railway может рвать idle-соединения к Postgres
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=DB_ECHO,
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 
 # Фабрика сессий. Через неё мы будем делать запросы к БД
 session_maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
 
 async def init_models():
     """Создает таблицы в БД, если их еще нет, и заполняет normalized_city."""
@@ -126,54 +137,121 @@ async def init_models():
             "CREATE INDEX IF NOT EXISTS idx_teammate_ratings_to_user_id "
             "ON teammate_ratings (to_user_id)"
         ))
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_game VARCHAR(20) DEFAULT 'dota'"
-        ))
-        await conn.execute(text(
-            "UPDATE users SET last_active_game = 'dota' WHERE last_active_game IS NULL OR last_active_game = ''"
-        ))
-        await conn.execute(text(
-            "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
-        ))
-        await conn.execute(text(
-            "UPDATE swipes SET game = 'dota' WHERE game IS NULL OR game = ''"
-        ))
-        await conn.execute(text("""
-            DO $$ BEGIN
-                ALTER TABLE swipes DROP CONSTRAINT IF EXISTS uq_swipe_from_to;
-            EXCEPTION WHEN others THEN NULL;
-            END $$;
-        """))
-        await conn.execute(text("""
-            DO $$ BEGIN
-                ALTER TABLE swipes ADD CONSTRAINT uq_swipe_from_to_game
-                UNIQUE (from_user_id, to_user_id, game);
-            EXCEPTION WHEN duplicate_object THEN NULL;
-            END $$;
-        """))
-        await conn.execute(text(
-            "ALTER TABLE teammate_ratings ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
-        ))
-        await conn.execute(text(
-            "UPDATE teammate_ratings SET game = 'dota' WHERE game IS NULL OR game = ''"
-        ))
-        await conn.execute(text("""
-            DO $$ BEGIN
-                ALTER TABLE teammate_ratings DROP CONSTRAINT IF EXISTS uq_teammate_rating_from_to;
-            EXCEPTION WHEN others THEN NULL;
-            END $$;
-        """))
-        await conn.execute(text("""
-            DO $$ BEGIN
-                ALTER TABLE teammate_ratings ADD CONSTRAINT uq_teammate_rating_from_to_game
-                UNIQUE (from_user_id, to_user_id, game);
-            EXCEPTION WHEN duplicate_object THEN NULL;
-            END $$;
-        """))
+        await _ensure_multi_game_schema(conn)
         await _migrate_legacy_dota_profiles(conn)
 
     from bot.database.requests import backfill_normalized_cities
     await backfill_normalized_cities()
+
+
+async def _ensure_multi_game_schema(conn) -> None:
+    """Колонки/таблицы под мульти-игры. Идемпотентно для Railway."""
+    await conn.execute(text(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_game VARCHAR(20) DEFAULT 'dota'"
+    ))
+    await conn.execute(text(
+        "UPDATE users SET last_active_game = 'dota' "
+        "WHERE last_active_game IS NULL OR last_active_game = ''"
+    ))
+
+    # Явно создаём таблицы (на случай если create_all споткнулся об enum)
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS game_profiles (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+            game VARCHAR(20) NOT NULL DEFAULT 'dota',
+            bio TEXT,
+            photo_file_id VARCHAR,
+            roles INTEGER[] NOT NULL DEFAULT '{}',
+            status VARCHAR(20) NOT NULL DEFAULT 'incomplete',
+            created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+            CONSTRAINT uq_game_profile_user_game UNIQUE (user_id, game)
+        )
+    """))
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_game_profiles_user_id ON game_profiles (user_id)"
+    ))
+    # Если create_all уже успел сделать status PG-enum — переводим в VARCHAR
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE game_profiles
+                ALTER COLUMN status TYPE VARCHAR(20)
+                USING lower(status::text);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    """))
+    await conn.execute(text("""
+        UPDATE game_profiles
+        SET status = lower(status)
+        WHERE status IS NOT NULL AND status <> lower(status)
+    """))
+
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS game_ratings (
+            id BIGSERIAL PRIMARY KEY,
+            profile_id BIGINT NOT NULL REFERENCES game_profiles(id) ON DELETE CASCADE,
+            kind VARCHAR(30) NOT NULL,
+            value INTEGER NOT NULL,
+            CONSTRAINT uq_game_rating_profile_kind UNIQUE (profile_id, kind)
+        )
+    """))
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_game_ratings_profile_id ON game_ratings (profile_id)"
+    ))
+
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS game_search_settings (
+            game_profile_id BIGINT PRIMARY KEY REFERENCES game_profiles(id) ON DELETE CASCADE,
+            min_age INTEGER,
+            max_age INTEGER,
+            wanted_roles INTEGER[],
+            wanted_rating_kind VARCHAR(30),
+            min_skill INTEGER,
+            max_skill INTEGER
+        )
+    """))
+
+    await conn.execute(text(
+        "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
+    ))
+    await conn.execute(text(
+        "UPDATE swipes SET game = 'dota' WHERE game IS NULL OR game = ''"
+    ))
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE swipes DROP CONSTRAINT IF EXISTS uq_swipe_from_to;
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    """))
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE swipes ADD CONSTRAINT uq_swipe_from_to_game
+            UNIQUE (from_user_id, to_user_id, game);
+        EXCEPTION WHEN duplicate_object THEN NULL;
+                   WHEN unique_violation THEN NULL;
+        END $$;
+    """))
+
+    await conn.execute(text(
+        "ALTER TABLE teammate_ratings ADD COLUMN IF NOT EXISTS game VARCHAR(20) DEFAULT 'dota'"
+    ))
+    await conn.execute(text(
+        "UPDATE teammate_ratings SET game = 'dota' WHERE game IS NULL OR game = ''"
+    ))
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE teammate_ratings DROP CONSTRAINT IF EXISTS uq_teammate_rating_from_to;
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    """))
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE teammate_ratings ADD CONSTRAINT uq_teammate_rating_from_to_game
+            UNIQUE (from_user_id, to_user_id, game);
+        EXCEPTION WHEN duplicate_object THEN NULL;
+                   WHEN unique_violation THEN NULL;
+        END $$;
+    """))
 
 
 async def _migrate_legacy_dota_profiles(conn) -> None:
@@ -185,9 +263,10 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
         ")"
     ))
     if not users_has_mmr.scalar():
+        logger.info("Legacy users.mmr нет — миграция анкет пропущена")
         return
 
-    await conn.execute(text("""
+    result = await conn.execute(text("""
         INSERT INTO game_profiles (user_id, game, bio, photo_file_id, roles, status)
         SELECT
             u.telegram_id,
@@ -196,10 +275,12 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
             u.photo_file_id,
             COALESCE(u.positions, ARRAY[]::integer[]),
             CASE
-                WHEN u.status::text IN ('HIDDEN', 'hidden') THEN 'HIDDEN'
-                WHEN u.status::text IN ('ACTIVE', 'active', 'BANNED', 'banned') THEN 'ACTIVE'
-                ELSE 'INCOMPLETE'
-            END::profilestatus
+                WHEN upper(u.status::text) IN ('HIDDEN') THEN 'hidden'
+                WHEN upper(u.status::text) IN ('ACTIVE', 'BANNED') THEN 'active'
+                WHEN lower(u.status::text) IN ('hidden') THEN 'hidden'
+                WHEN lower(u.status::text) IN ('active', 'banned') THEN 'active'
+                ELSE 'incomplete'
+            END
         FROM users u
         WHERE COALESCE(u.name, '') <> ''
           AND NOT EXISTS (
@@ -207,6 +288,8 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
               WHERE gp.user_id = u.telegram_id AND gp.game = 'dota'
           )
     """))
+    logger.info("Мигрировано game_profiles (dota): %s", result.rowcount)
+
     await conn.execute(text("""
         INSERT INTO game_ratings (profile_id, kind, value)
         SELECT gp.id, 'mmr', COALESCE(u.mmr, 0)
@@ -247,8 +330,18 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
             )
         """))
 
+    # Скрытость теперь на игровой анкете; аккаунт оставляем ACTIVE (кроме бана)
     await conn.execute(text("""
-        UPDATE users
-        SET status = 'ACTIVE'::profilestatus
-        WHERE status::text IN ('HIDDEN', 'hidden')
+        DO $$ BEGIN
+            UPDATE users
+            SET status = 'ACTIVE'
+            WHERE upper(status::text) = 'HIDDEN';
+        EXCEPTION WHEN others THEN
+            BEGIN
+                UPDATE users
+                SET status = 'active'
+                WHERE lower(status::text) = 'hidden';
+            EXCEPTION WHEN others THEN NULL;
+            END;
+        END $$;
     """))

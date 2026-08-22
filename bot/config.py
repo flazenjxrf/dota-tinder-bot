@@ -12,20 +12,33 @@ DB_ECHO = os.getenv("DB_ECHO", "").lower() in ("1", "true", "yes")
 
 def _normalize_database_url(url: str) -> str:
     """Приводит URL к формату postgresql+asyncpg:// и настраивает SSL для Railway."""
+    url = (url or "").strip().strip('"').strip("'")
     if url.startswith("postgres://"):
         url = "postgresql+asyncpg://" + url[len("postgres://") :]
     elif url.startswith("postgresql://"):
         url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+    elif url.startswith("postgresql+psycopg2://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql+psycopg2://") :]
 
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
 
+    # asyncpg не понимает sslmode — только ssl
     if "sslmode" in query:
-        del query["sslmode"]
-        query.setdefault("ssl", ["require"])
+        mode = (query.pop("sslmode") or ["require"])[0]
+        if mode and mode.lower() not in ("disable", "allow", "prefer"):
+            query.setdefault("ssl", ["require"])
+        elif mode and mode.lower() == "disable":
+            query.pop("ssl", None)
+
+    # channel_binding иногда ломает asyncpg на Railway
+    query.pop("channel_binding", None)
 
     host = parsed.hostname or ""
-    is_railway_public = ("railway.app" in host or "rlwy.net" in host) and "railway.internal" not in host
+    is_railway_public = (
+        ("railway.app" in host or "rlwy.net" in host)
+        and "railway.internal" not in host
+    )
     if is_railway_public and "ssl" not in query:
         query["ssl"] = ["require"]
 

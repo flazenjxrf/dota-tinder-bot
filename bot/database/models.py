@@ -121,7 +121,15 @@ class GameProfile(Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_file_id: Mapped[str | None] = mapped_column(String, nullable=True)
     roles: Mapped[list[int]] = mapped_column(ARRAY(Integer), default=list)
-    status: Mapped[ProfileStatus] = mapped_column(Enum(ProfileStatus), default=ProfileStatus.INCOMPLETE)
+    # VARCHAR, не PG-enum: на Railway уже есть profilestatus у users, не плодим второй тип
+    status: Mapped[ProfileStatus] = mapped_column(
+        Enum(
+            ProfileStatus,
+            values_callable=lambda obj: [e.value for e in obj],
+            native_enum=False,
+        ),
+        default=ProfileStatus.INCOMPLETE,
+    )
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     user = relationship("User", back_populates="game_profiles")
