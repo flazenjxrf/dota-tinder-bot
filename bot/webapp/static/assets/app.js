@@ -56,7 +56,7 @@ function valueRatingKinds(kinds, game = currentGame()) {
 }
 
 function rulesLink(id = "open-rules") {
-  return `<button type="button" class="link-muted" id="${id}">Правила</button>`;
+  return `<button type="button" class="link-muted" id="${id}">У нас есть правила</button>`;
 }
 
 async function openRules() {
@@ -170,7 +170,7 @@ function formatMmr(value) {
   return Number(value).toLocaleString("ru-RU");
 }
 
-function sliderField({ id, label, min, max, step = 1, value, format = (v) => String(v), fmt = "" }) {
+function sliderField({ id, label = "", min, max, step = 1, value, format = (v) => String(v), fmt = "" }) {
   const fallback = Math.round((min + max) / 2);
   let v = value === "" || value == null ? fallback : Number(value);
   if (Number.isNaN(v)) v = fallback;
@@ -178,8 +178,8 @@ function sliderField({ id, label, min, max, step = 1, value, format = (v) => Str
   if (step > 1) v = Math.round(v / step) * step;
   return `
     <div class="field slider-field">
-      <div class="slider-head">
-        <label>${label}</label>
+      <div class="slider-head${label ? "" : " slider-head-value"}">
+        ${label ? `<label>${label}</label>` : ""}
         <strong class="slider-val" data-for="${id}">${format(v)}</strong>
       </div>
       <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" data-fmt="${escapeHtml(fmt)}" />
@@ -628,6 +628,53 @@ function applyCopySource(r, gameId) {
   r.photo_preview = source.photo_url || "";
 }
 
+function copySources(r) {
+  return (r._sources || []).filter((item) => item.id !== r.game);
+}
+
+function copyFromOtherHtml(r) {
+  const sources = copySources(r);
+  if (!sources.length) return "";
+  return `
+    <button type="button" class="btn btn-ghost btn-block" id="copy-other">Взять из другой анкеты</button>
+    ${
+      sources.length > 1
+        ? `<div class="stack" id="copy-other-picks" hidden>
+            ${sources
+              .map(
+                (item) => `
+              <button type="button" class="btn btn-ghost btn-block" data-copy-pick="${item.id}">Из ${escapeHtml(item.label)}</button>`
+              )
+              .join("")}
+          </div>`
+        : ""
+    }`;
+}
+
+function bindCopyFromOther(root, r) {
+  const btn = root.querySelector("#copy-other");
+  if (!btn) return;
+  const sources = copySources(r);
+  btn.onclick = () => {
+    if (sources.length === 1) {
+      applyCopySource(r, sources[0].id);
+      toast(`Взяли из ${sources[0].label}`);
+      render();
+      return;
+    }
+    const picks = root.querySelector("#copy-other-picks");
+    if (picks) picks.hidden = !picks.hidden;
+  };
+  root.querySelectorAll("[data-copy-pick]").forEach((el) => {
+    el.onclick = () => {
+      applyCopySource(r, el.dataset.copyPick);
+      const source = sources.find((item) => item.id === el.dataset.copyPick);
+      toast(source ? `Взяли из ${source.label}` : "Скопировали");
+      render();
+    };
+  });
+}
+
 function registerSteps(r) {
   const spec = gameSpec(r.game) || { ratings: [], roles: POSITIONS, multi_rating: false, label: "игра" };
   const steps = [];
@@ -680,10 +727,10 @@ function registerSteps(r) {
       id: "age",
       render: () => `
         <div class="panel stack">
-          <h2>Возраст</h2>
+          <h2>Твой возраст</h2>
           ${sliderField({
             id: "age",
-            label: "Твой возраст",
+            label: "",
             min: AGE_MIN,
             max: AGE_MAX,
             value: r.age || 18,
@@ -701,46 +748,13 @@ function registerSteps(r) {
       render: () => `
         <div class="panel stack">
           <h2>В каком городе живешь?</h2>
-          <p class="muted">При поиске у игроков из твоего города приоритет</p>
-          <div class="field"><input id="city" maxlength="50" value="${escapeHtml(r.city)}" placeholder="Москва" /></div>
+          <p class="muted">Сперва будут попадаться игроки из твоего города</p>
+          <div class="field"><input id="city" maxlength="50" value="${escapeHtml(r.city)}" /></div>
           <button class="btn btn-primary btn-block" id="next">Дальше</button>
         </div>`,
       validate: (root) => {
         r.city = root.querySelector("#city").value.trim();
         if (!r.city) throw new Error("Укажи город");
-      },
-    });
-  } else if ((r._sources || []).length) {
-    steps.push({
-      id: "copy",
-      render: () => `
-        <div class="panel stack">
-          <h2>${escapeHtml(spec.label)}</h2>
-          <p class="muted">Можно взять фото и описание из другой анкеты</p>
-          ${(r._sources || [])
-            .map(
-              (item) => `
-            <button type="button" class="btn ${r.copy_from === item.id ? "btn-primary" : "btn-ghost"} btn-block" data-copy="${item.id}">
-              Взять из ${escapeHtml(item.label)}
-            </button>`
-            )
-            .join("")}
-          <button type="button" class="btn btn-ghost btn-block" data-copy="">Заполнить заново</button>
-          <button class="btn btn-primary btn-block" id="next">Дальше</button>
-        </div>`,
-      bind: (root) => {
-        root.querySelectorAll("[data-copy]").forEach((btn) => {
-          btn.onclick = () => {
-            r.copy_from = btn.dataset.copy || "";
-            if (r.copy_from) applyCopySource(r, r.copy_from);
-            else {
-              r.bio = "";
-              r.photo_file_id = "";
-              r.photo_preview = "";
-            }
-            render();
-          };
-        });
       },
     });
   }
@@ -865,11 +879,16 @@ function registerSteps(r) {
     render: () => `
       <div class="panel stack">
         <h2>Расскажи о себе</h2>
-        <p class="muted">Можешь оставить поле пустым, но разве это интересно? · ${rulesLink("open-rules")}</p>
+        <p class="muted">Можешь оставить поле пустым, но разве это интересно?</p>
+        <p class="muted" style="margin:0">${rulesLink("open-rules")}</p>
         <div class="field"><textarea id="bio" maxlength="500">${escapeHtml(r.bio)}</textarea></div>
+        ${copyFromOtherHtml(r)}
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
-    bind: (root) => bindRulesLinks(root),
+    bind: (root) => {
+      bindRulesLinks(root);
+      bindCopyFromOther(root, r);
+    },
     validate: (root) => {
       r.bio = root.querySelector("#bio").value.trim();
     },
@@ -880,12 +899,17 @@ function registerSteps(r) {
     render: () => `
       <div class="panel stack">
         <h2>Загрузи фотографию для анкеты</h2>
-        <p class="muted">Не обязательно себя, можно какой-нибудь мем, только не нарушай правила! · ${rulesLink("open-rules-photo")}</p>
+        <p class="muted">Это поможет привлечь внимание к твоей анкете</p>
+        <p class="muted" style="margin:0">${rulesLink("open-rules-photo")}</p>
         ${r.photo_preview ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(r.photo_preview)}" alt="" /></div>` : ""}
         <label class="btn btn-ghost btn-block file-btn">${r.photo_file_id ? "Сменить фото" : "Выбрать фото"}<input type="file" id="photo" accept="image/*" /></label>
+        ${copyFromOtherHtml(r)}
         <button class="btn btn-primary btn-block" id="next" ${r.photo_file_id ? "" : "disabled"}>Дальше</button>
       </div>`,
-    bind: (root) => bindRulesLinks(root),
+    bind: (root) => {
+      bindRulesLinks(root);
+      bindCopyFromOther(root, r);
+    },
   });
 
   const filterKinds = () =>
@@ -895,6 +919,10 @@ function registerSteps(r) {
     render: () => `
       <div class="panel stack">
         <h2>Теперь настроим поиск</h2>
+        <div class="field">
+          <label>Роли</label>
+          ${posButtons(r.wanted_roles, "wanted", spec.roles)}
+        </div>
         ${dualSliderField({
           minId: "min_age",
           maxId: "max_age",
@@ -906,10 +934,6 @@ function registerSteps(r) {
           format: formatAge,
           fmt: "age",
         })}
-        <div class="field">
-          <label>Роли</label>
-          ${posButtons(r.wanted_roles, "wanted", spec.roles)}
-        </div>
         ${skillFiltersHtml(filterKinds(), r, r.game)}
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
@@ -1649,7 +1673,7 @@ function renderEditProfile() {
       <div class="field"><label>Как тебя зовут?</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
       ${sliderField({
         id: "age",
-        label: "Возраст",
+        label: "Твой возраст",
         min: AGE_MIN,
         max: AGE_MAX,
         value: e.age || 18,
@@ -1658,7 +1682,7 @@ function renderEditProfile() {
       })}
       <div class="field">
         <label>В каком городе живешь?</label>
-        <p class="muted" style="margin:0 0 8px">При поиске у игроков из твоего города приоритет</p>
+        <p class="muted" style="margin:0 0 8px">Сперва будут попадаться игроки из твоего города</p>
         <input id="city" maxlength="50" value="${escapeHtml(e.city)}" />
       </div>
       ${
@@ -1683,12 +1707,14 @@ function renderEditProfile() {
       ${renderRatingFields(kinds, e.ratings || {})}
       <div class="field">
         <label>Расскажи о себе</label>
-        <p class="muted" style="margin:0 0 8px">Можешь оставить поле пустым, но разве это интересно? · ${rulesLink("open-rules")}</p>
+        <p class="muted" style="margin:0 0 4px">Можешь оставить поле пустым, но разве это интересно?</p>
+        <p class="muted" style="margin:0 0 8px">${rulesLink("open-rules")}</p>
         <textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea>
       </div>
       <div class="field">
         <label>Загрузи фотографию для анкеты</label>
-        <p class="muted" style="margin:0 0 8px">Не обязательно себя, можно какой-нибудь мем, только не нарушай правила! · ${rulesLink("open-rules-photo")}</p>
+        <p class="muted" style="margin:0 0 4px">Это поможет привлечь внимание к твоей анкете</p>
+        <p class="muted" style="margin:0 0 8px">${rulesLink("open-rules-photo")}</p>
         ${
           e.photo_preview
             ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(e.photo_preview)}" alt="" /></div>`
@@ -1806,6 +1832,7 @@ function renderSearchSettings() {
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
       <h2>Теперь настроим поиск</h2>
+      <div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
       ${dualSliderField({
         minId: "min_age",
         maxId: "max_age",
@@ -1817,7 +1844,6 @@ function renderSearchSettings() {
         format: formatAge,
         fmt: "age",
       })}
-      <div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
       ${skillFiltersHtml(kinds, f)}
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
     </div>`

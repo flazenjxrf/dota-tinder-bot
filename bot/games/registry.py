@@ -68,7 +68,7 @@ GAMES: dict[str, dict[str, Any]] = {
                 "kind": "premier",
                 "label": "Премьер",
                 "min": 0,
-                "max": 40000,
+                "max": 30000,
                 "step": 1000,
                 "default": 10000,
                 "open_ended": True,
