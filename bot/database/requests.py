@@ -54,37 +54,25 @@ def _ratings_from_data(game: str, data: dict) -> list[tuple[str, int]]:
 
 
 async def _upsert_game_profile(session, user: User, game: str, data: dict) -> GameProfile:
-    """Создаёт/обновляет игровую анкету.
-
-    В async нельзя трогать unloaded relationship (lazy load → MissingGreenlet).
-    Профиль всегда читаем/пишем явным запросом + selectinload.
-    """
-    from sqlalchemy.orm import selectinload
-    from sqlalchemy.orm.attributes import flag_modified, set_committed_value
-    from sqlalchemy import inspect as sa_inspect
+    """Создаёт/обновляет игровую анкету без lazy-load (async-safe)."""
+    from sqlalchemy.orm.attributes import flag_modified
 
     game = normalize_game(game)
-    result = await session.execute(
-        select(GameProfile)
-        .options(
-            selectinload(GameProfile.ratings),
-            selectinload(GameProfile.settings),
+    profile = (
+        await session.execute(
+            select(GameProfile).where(
+                GameProfile.user_id == user.telegram_id,
+                GameProfile.game == game,
+            )
         )
-        .where(GameProfile.user_id == user.telegram_id, GameProfile.game == game)
-    )
-    profile = result.scalar_one_or_none()
+    ).scalar_one_or_none()
+
     if profile is None:
         profile = GameProfile(user_id=user.telegram_id, game=game)
         session.add(profile)
         await session.flush()
-        # Синхронизируем коллекцию без lazy-load
-        if "game_profiles" in sa_inspect(user).unloaded:
-            set_committed_value(user, "game_profiles", [profile])
-        else:
-            if profile not in user.game_profiles:
-                user.game_profiles.append(profile)
 
-    roles = valid_roles(game, data.get("roles") or data.get("positions") or profile.roles)
+    roles = valid_roles(game, data.get("roles") or data.get("positions") or (profile.roles or []))
     if roles:
         profile.roles = list(roles)
         flag_modified(profile, "roles")
@@ -95,25 +83,34 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
         profile.photo_file_id = photo
     profile.status = data.get("game_status") or ProfileStatus.ACTIVE
 
+    # Рейтинги — только явным SELECT, не через profile.ratings
+    rating_rows = (
+        await session.execute(select(GameRating).where(GameRating.profile_id == profile.id))
+    ).scalars().all()
+    existing = {item.kind: item for item in rating_rows}
     ratings = _ratings_from_data(game, data)
+    keep: set[str] = set()
     if ratings:
-        current_ratings = list(profile.ratings or [])
-        existing = {item.kind: item for item in current_ratings}
-        keep = set()
         for kind, value in ratings:
             keep.add(kind)
             if kind in existing:
                 existing[kind].value = value
             else:
-                profile.ratings.append(GameRating(kind=kind, value=value))
-        for kind, item in list(existing.items()):
+                session.add(GameRating(profile_id=profile.id, kind=kind, value=value))
+        for kind, item in existing.items():
             if kind not in keep:
-                profile.ratings.remove(item)
+                await session.delete(item)
 
-    if profile.settings is None:
-        profile.settings = SearchSettings(game_profile_id=profile.id)
+    # Settings — тоже явным SELECT
+    settings = (
+        await session.execute(
+            select(SearchSettings).where(SearchSettings.game_profile_id == profile.id)
+        )
+    ).scalar_one_or_none()
+    if settings is None:
+        settings = SearchSettings(game_profile_id=profile.id)
+        session.add(settings)
 
-    settings = profile.settings
     if "wanted_roles" in data or "wanted_positions" in data:
         wanted = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
         settings.wanted_roles = wanted or None
@@ -130,6 +127,10 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
     if not settings.wanted_rating_kind:
         kinds = [kind for kind, _ in ratings] or rating_kinds(game)
         settings.wanted_rating_kind = kinds[0] if kinds else None
+
+    await session.flush()
+    # Подтягиваем ratings для is_complete() без lazy-load
+    await session.refresh(profile, attribute_names=["ratings", "settings"])
     return profile
 
 
