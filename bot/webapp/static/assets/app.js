@@ -28,6 +28,7 @@ const REPORT_REASONS = [
   { id: "nsfw", label: "NSFW-контент" },
   { id: "political", label: "Политика и разжигание ненависти" },
 ];
+const MMR_MIN = 0;
 const MMR_MAX = 20000;
 const MMR_STEP = 100;
 
