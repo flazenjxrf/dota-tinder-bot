@@ -181,6 +181,18 @@ async def _ensure_multi_game_schema(conn) -> None:
         END $$;
     """))
     await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE game_profiles
+                ALTER COLUMN created_at SET DEFAULT (NOW() AT TIME ZONE 'utc');
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    """))
+    await conn.execute(text("""
+        UPDATE game_profiles
+        SET created_at = (NOW() AT TIME ZONE 'utc')
+        WHERE created_at IS NULL
+    """))
+    await conn.execute(text("""
         UPDATE game_profiles
         SET status = lower(status)
         WHERE status IS NOT NULL AND status <> lower(status)
@@ -267,7 +279,7 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
         return
 
     result = await conn.execute(text("""
-        INSERT INTO game_profiles (user_id, game, bio, photo_file_id, roles, status)
+        INSERT INTO game_profiles (user_id, game, bio, photo_file_id, roles, status, created_at)
         SELECT
             u.telegram_id,
             'dota',
@@ -280,7 +292,8 @@ async def _migrate_legacy_dota_profiles(conn) -> None:
                 WHEN lower(u.status::text) IN ('hidden') THEN 'hidden'
                 WHEN lower(u.status::text) IN ('active', 'banned') THEN 'active'
                 ELSE 'incomplete'
-            END
+            END,
+            COALESCE(u.created_at, (NOW() AT TIME ZONE 'utc'))
         FROM users u
         WHERE COALESCE(u.name, '') <> ''
           AND NOT EXISTS (

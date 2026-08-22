@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint
+from sqlalchemy import BigInteger, String, Integer, Text, Boolean, ForeignKey, Enum, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 import enum
@@ -130,7 +130,10 @@ class GameProfile(Base):
         ),
         default=ProfileStatus.INCOMPLETE,
     )
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow,
+        server_default=text("TIMEZONE('utc', NOW())"),
+    )
 
     user = relationship("User", back_populates="game_profiles")
     ratings = relationship("GameRating", back_populates="profile", cascade="all, delete-orphan")
