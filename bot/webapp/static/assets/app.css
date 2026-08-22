@@ -190,7 +190,7 @@ button {
   transform: scale(0.97);
 }
 
-.btn:disabled {
+.btn:disabled:not(.btn-action) {
   opacity: 0.45;
   pointer-events: none;
 }
@@ -220,19 +220,28 @@ button {
   border: none;
   padding: 0;
   min-height: 0;
+  aspect-ratio: 395 / 244;
 }
 
 .btn-action .action-ico {
   width: 100%;
-  height: auto;
-  max-height: 50px;
+  height: 100%;
   display: block;
   object-fit: contain;
   pointer-events: none;
 }
 
+.btn-action:disabled {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.btn-action:disabled .action-ico {
+  filter: grayscale(1);
+  opacity: 0.42;
+}
+
 .btn-report.btn-action {
-  max-width: 72px;
   margin: 0 auto;
 }
 
@@ -240,10 +249,6 @@ button {
   transform: scale(0.94);
   background: transparent;
   border: none;
-}
-
-.btn-action:disabled {
-  opacity: 0.38;
 }
 
 .btn-emoji {

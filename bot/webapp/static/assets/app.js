@@ -285,9 +285,8 @@ function navHtml() {
   `;
 }
 
-function actionIcon(name, { disabled = false } = {}) {
-  const suffix = disabled ? "-disabled" : "";
-  return `<img class="action-ico" src="/assets/icons/action-${name}${suffix}.png?v=20260822i" alt="" />`;
+function actionIcon(name) {
+  return `<img class="action-ico" src="/assets/icons/action-${name}.png?v=20260822k" alt="" />`;
 }
 
 function shell(_title, body, { showNav = true } = {}) {
@@ -587,7 +586,7 @@ async function renderBrowse() {
       `
       ${profileCard(profile)}
       <div class="actions">
-        <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo", { disabled: !state.lastSwipedId })}</button>
+        <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo")}</button>
         <button class="btn btn-action btn-dislike" id="dislike" title="Дизлайк">${actionIcon("dislike")}</button>
         <button class="btn btn-action btn-msg" id="msg" title="Лайк с сообщением">${actionIcon("message")}</button>
         <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
