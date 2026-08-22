@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConsentBody(BaseModel):
@@ -44,6 +44,13 @@ class RatingInput(BaseModel):
     value: int
 
 
+def _empty_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 class ProfileUpdateBody(BaseModel):
     name: str | None = Field(default=None, max_length=50)
     age: int | None = Field(default=None, ge=12, le=60)
@@ -55,6 +62,13 @@ class ProfileUpdateBody(BaseModel):
     game: str | None = None
     mmr: int | None = Field(default=None, ge=0, le=20000)
     positions: list[int] | None = None
+
+    @field_validator("name", "city", "photo_file_id", "bio", mode="before")
+    @classmethod
+    def blank_optional(cls, value):
+        if isinstance(value, str):
+            return _empty_to_none(value)
+        return value
 
 
 class SettingsUpdateBody(BaseModel):
@@ -68,6 +82,13 @@ class SettingsUpdateBody(BaseModel):
     wanted_positions: list[int] | None = None
     min_mmr: int | None = Field(default=None, ge=0, le=20000)
     max_mmr: int | None = Field(default=None, ge=0, le=20000)
+
+    @field_validator("wanted_rating_kind", "game", mode="before")
+    @classmethod
+    def blank_optional(cls, value):
+        if isinstance(value, str):
+            return _empty_to_none(value)
+        return value
 
 
 class RegisterBody(BaseModel):
@@ -91,6 +112,13 @@ class RegisterBody(BaseModel):
     wanted_positions: list[int] | None = None
     min_mmr: int | None = None
     max_mmr: int | None = None
+
+    @field_validator("name", "city", "photo_file_id", "copy_card_from", "wanted_rating_kind", mode="before")
+    @classmethod
+    def blank_optional(cls, value):
+        if isinstance(value, str):
+            return _empty_to_none(value)
+        return value
 
 
 class CopyCardBody(BaseModel):

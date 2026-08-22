@@ -50,6 +50,7 @@ from bot.games import (
 )
 from bot.webapp.deps import CurrentBot, CurrentUser, WebAppUser
 from bot.webapp.notifications import notify_like_threshold, notify_like_with_message, notify_match
+from bot.utils.city import format_city_display
 from bot.webapp.schemas import (
     CopyCardBody,
     FeedbackBody,
@@ -156,19 +157,26 @@ async def get_me(game: str | None = None, user: WebAppUser = CurrentUser):
     if banned:
         return payload
 
-    if registered and profile and extras["has_game_profile"]:
-        aura, vibe = await get_reputation_counts(user.id, current_game)
-        payload["profile"] = serialize_profile(
-            profile,
-            game=current_game,
-            aura=aura,
-            vibe=vibe,
-            include_settings=True,
-        )
-        payload["pending_likes"] = await get_pending_likes_count(user.id, current_game)
-        payload["like_messages_remaining"] = await get_like_messages_remaining_today(user.id)
-        payload["like_message_limit"] = DAILY_LIKE_MESSAGE_LIMIT
-        payload["like_message_max_length"] = LIKE_MESSAGE_MAX_LENGTH
+    if registered and profile:
+        payload["person"] = {
+            "name": profile.name,
+            "age": profile.age,
+            "city": format_city_display(profile),
+            "username": profile.username,
+        }
+        if extras["has_game_profile"]:
+            aura, vibe = await get_reputation_counts(user.id, current_game)
+            payload["profile"] = serialize_profile(
+                profile,
+                game=current_game,
+                aura=aura,
+                vibe=vibe,
+                include_settings=True,
+            )
+            payload["pending_likes"] = await get_pending_likes_count(user.id, current_game)
+            payload["like_messages_remaining"] = await get_like_messages_remaining_today(user.id)
+            payload["like_message_limit"] = DAILY_LIKE_MESSAGE_LIMIT
+            payload["like_message_max_length"] = LIKE_MESSAGE_MAX_LENGTH
 
     return payload
 

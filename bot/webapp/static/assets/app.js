@@ -483,7 +483,7 @@ function emptyRegister(game = "dota", mode = "full") {
   const ratings = {};
   for (const item of spec.ratings || []) ratings[item.kind] = String(item.default ?? item.min);
   const first = spec.ratings?.[0];
-  const person = state.me?.profile;
+  const person = state.me?.person || state.me?.profile;
   const sources = (state.me?.games || []).filter((item) => item.has_profile);
   return {
     step: 0,
@@ -899,25 +899,26 @@ function renderRegister() {
             )
           : { min: null, max: null };
         const kinds = r.rating_kinds.length ? r.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
+        const payload = {
+          game: r.game,
+          roles: r.roles,
+          ratings: kinds.map((kind) => ({ kind, value: Number(r.ratings[kind]) })),
+          bio: r.bio || "",
+          wanted_roles: r.wanted_roles,
+          wanted_rating_kind: r.wanted_rating_kind || searchSpec?.kind || null,
+          min_age: ageFilter.min,
+          max_age: ageFilter.max,
+          min_skill: skillFilter.min,
+          max_skill: skillFilter.max,
+        };
+        if (r.name) payload.name = r.name;
+        if (r.age) payload.age = Number(r.age);
+        if (r.city) payload.city = r.city;
+        if (r.photo_file_id) payload.photo_file_id = r.photo_file_id;
+        if (r.copy_from) payload.copy_card_from = r.copy_from;
         await api("/api/register", {
           method: "POST",
-          body: JSON.stringify({
-            game: r.game,
-            name: r.name,
-            age: Number(r.age),
-            city: r.city,
-            roles: r.roles,
-            ratings: kinds.map((kind) => ({ kind, value: Number(r.ratings[kind]) })),
-            bio: r.bio,
-            photo_file_id: r.photo_file_id,
-            copy_card_from: r.copy_from || null,
-            wanted_roles: r.wanted_roles,
-            wanted_rating_kind: r.wanted_rating_kind || searchSpec?.kind,
-            min_age: ageFilter.min,
-            max_age: ageFilter.max,
-            min_skill: skillFilter.min,
-            max_skill: skillFilter.max,
-          }),
+          body: JSON.stringify(payload),
         });
         await refreshMe(r.game);
         state.tab = "browse";
