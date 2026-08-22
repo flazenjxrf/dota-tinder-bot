@@ -164,8 +164,13 @@ class GameProfile(Base):
         return role_labels(self.game, self.roles)
 
     def is_complete(self) -> bool:
+        status = self.status
+        if isinstance(status, str):
+            status_value = status.lower()
+        else:
+            status_value = status.value if status else ProfileStatus.INCOMPLETE.value
         return (
-            self.status != ProfileStatus.INCOMPLETE
+            status_value != ProfileStatus.INCOMPLETE.value
             and bool(self.photo_file_id)
             and bool(self.roles)
             and bool(self.ratings)

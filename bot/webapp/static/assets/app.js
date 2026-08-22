@@ -361,8 +361,9 @@ function shell(_title, body, { showNav = true } = {}) {
 }
 
 async function refreshMe(game = null) {
-  const query = game || state.me?.current_game;
-  state.me = await api(query ? `/api/me?game=${encodeURIComponent(query)}` : "/api/me");
+  // Без явной игры сервер сам выберет last_active с готовой анкетой
+  // (не форсим cs2 через ?game= из стейта).
+  state.me = await api(game ? `/api/me?game=${encodeURIComponent(game)}` : "/api/me");
 }
 
 function gameSwitchHtml() {
@@ -841,13 +842,39 @@ function renderRegister() {
   const current = steps[r.step];
   const root = document.getElementById("app");
   const showNav = r.mode === "game";
-  root.innerHTML = shell(`Анкета · ${r.step + 1}/${steps.length}`, current.render(), { showNav });
+  const otherReady = (state.me?.games || []).filter((item) => item.has_profile && item.id !== r.game);
+  const skipHtml =
+    r.mode === "game" && otherReady.length
+      ? `<button type="button" class="btn btn-ghost btn-block" id="skip-game">К ${escapeHtml(otherReady[0].label)}</button>`
+      : "";
+  root.innerHTML = shell(
+    `Анкета · ${r.step + 1}/${steps.length}`,
+    `${current.render()}${r.step === 0 ? skipHtml : ""}`,
+    { showNav }
+  );
   if (showNav) {
     bindNav(root);
     bindGameSwitch(root);
   }
   bindSliders(root);
   current.bind?.(root);
+
+  const skip = root.querySelector("#skip-game");
+  if (skip) {
+    skip.onclick = async () => {
+      try {
+        state.me = await api("/api/me/game", {
+          method: "POST",
+          body: JSON.stringify({ game: otherReady[0].id }),
+        });
+        state.register = emptyRegister(otherReady[0].id, "full");
+        haptic("light");
+        render();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  }
 
   const next = root.querySelector("#next");
   if (next) {
@@ -904,10 +931,19 @@ function renderRegister() {
             )
           : { min: null, max: null };
         const kinds = r.rating_kinds.length ? r.rating_kinds : (spec?.ratings || []).map((item) => item.kind);
+        const ratings = kinds
+          .map((kind) => {
+            const raw = r.ratings[kind];
+            const value = Number(raw);
+            if (raw === "" || raw == null || Number.isNaN(value)) return null;
+            return { kind, value };
+          })
+          .filter(Boolean);
+        if (!ratings.length) throw new Error("Укажи рейтинг");
         const payload = {
           game: r.game,
           roles: r.roles,
-          ratings: kinds.map((kind) => ({ kind, value: Number(r.ratings[kind]) })),
+          ratings,
           bio: r.bio || "",
           wanted_roles: r.wanted_roles,
           wanted_rating_kind: r.wanted_rating_kind || searchSpec?.kind || null,

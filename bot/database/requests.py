@@ -121,23 +121,37 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
             stmt = select(User).options(*_user_load_options()).where(User.telegram_id == telegram_id)
             user = (await session.execute(stmt)).scalar_one_or_none()
             if user is None:
-                user = User(telegram_id=telegram_id)
+                name = (data.get("name") or "").strip()
+                age = data.get("age")
+                city = (data.get("city") or "").strip()
+                if not name or age is None or not city:
+                    raise ValueError("Для новой анкеты нужны имя, возраст и город")
+                user = User(
+                    telegram_id=telegram_id,
+                    username=username,
+                    name=name,
+                    age=int(age),
+                    city=city,
+                    normalized_city=normalize_city(city),
+                    status=ProfileStatus.ACTIVE,
+                    last_active_game=game,
+                )
                 session.add(user)
+                await session.flush()
+            else:
+                if username is not None:
+                    user.username = username
+                if data.get("name"):
+                    user.name = data["name"]
+                if data.get("age") is not None:
+                    user.age = data["age"]
+                if data.get("city"):
+                    user.city = data["city"]
+                    user.normalized_city = normalize_city(data["city"])
+                if user.status != ProfileStatus.BANNED:
+                    user.status = ProfileStatus.ACTIVE
+                user.last_active_game = game
 
-            if username is not None:
-                user.username = username
-            if data.get("name"):
-                user.name = data["name"]
-            if data.get("age") is not None:
-                user.age = data["age"]
-            if data.get("city"):
-                user.city = data["city"]
-                user.normalized_city = normalize_city(data["city"])
-            if user.status != ProfileStatus.BANNED:
-                user.status = ProfileStatus.ACTIVE
-            user.last_active_game = game
-
-            await session.flush()
             await _upsert_game_profile(session, user, game, data)
             await session.commit()
             logging.info("Пользователь %s сохранён (%s).", telegram_id, game)

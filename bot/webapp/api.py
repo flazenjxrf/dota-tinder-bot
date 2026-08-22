@@ -40,9 +40,11 @@ from bot.database.requests import (
     get_next_profile,
 )
 from bot.games import (
+    DEFAULT_GAME,
     catalog_payload,
     clamp_rating,
     is_known_game,
+    known_game_ids,
     normalize_game,
     rating_kinds,
     rating_spec,
@@ -70,14 +72,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-async def _resolved_game(user_id: int, game: str | None) -> str:
+def _profile_complete(user, game: str) -> bool:
+    if not user:
+        return False
+    profile = user.profile_for(game)
+    return bool(profile and profile.is_complete())
+
+
+def _best_game_for_user(user) -> str:
+    """Игра для холодного старта: last_active, если анкета есть, иначе любая готовая."""
+    if not user:
+        return DEFAULT_GAME
+    preferred = normalize_game(user.last_active_game)
+    if _profile_complete(user, preferred):
+        return preferred
+    for game_id in known_game_ids():
+        if _profile_complete(user, game_id):
+            return game_id
+    # Нет готовых анкет — дописываем черновик, не прыгаем на пустой cs2
+    if user.profile_for(preferred):
+        return preferred
+    for game_id in known_game_ids():
+        if user.profile_for(game_id):
+            return game_id
+    return preferred
+
+
+async def _resolved_game(user_id: int, game: str | None, *, persist: bool = False) -> str:
+    """Резолв текущей игры. persist=True только при явном переключении (POST /me/game)."""
     if game and not is_known_game(game):
         raise HTTPException(status_code=400, detail="Неизвестная игра")
     if game:
-        await update_user_field(user_id, "last_active_game", normalize_game(game))
-        return normalize_game(game)
+        resolved = normalize_game(game)
+        if persist:
+            await update_user_field(user_id, "last_active_game", resolved)
+        return resolved
+
     person = await get_user_with_settings(user_id)
-    return normalize_game(person.last_active_game if person else None)
+    resolved = _best_game_for_user(person)
+    # Сбрасываем «залипший» last_active без анкеты (например cs2 после тапа на +)
+    if person and normalize_game(person.last_active_game) != resolved:
+        await update_user_field(user_id, "last_active_game", resolved)
+    return resolved
 
 
 def _normalize_ratings(game: str, ratings: list | None, mmr: int | None = None) -> list[dict]:
@@ -88,7 +124,16 @@ def _normalize_ratings(game: str, ratings: list | None, mmr: int | None = None) 
             value = item.value if hasattr(item, "value") else item.get("value")
             if kind not in rating_kinds(game):
                 raise HTTPException(status_code=400, detail=f"Неизвестная шкала: {kind}")
-            items.append({"kind": kind, "value": clamp_rating(game, kind, int(value))})
+            try:
+                if value is None or (isinstance(value, float) and value != value):
+                    raise ValueError("empty")
+                numeric = int(value)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Некорректный рейтинг: {kind}",
+                ) from exc
+            items.append({"kind": kind, "value": clamp_rating(game, kind, numeric)})
     elif mmr is not None and game == "dota":
         items.append({"kind": "mmr", "value": clamp_rating(game, "mmr", int(mmr))})
     return items
@@ -184,7 +229,9 @@ async def get_me(game: str | None = None, user: WebAppUser = CurrentUser):
 @router.post("/me/game")
 async def switch_game(body: GameSwitchBody, user: WebAppUser = CurrentUser):
     await _require_person(user.id)
-    game = await _resolved_game(user.id, body.game)
+    if not is_known_game(body.game):
+        raise HTTPException(status_code=400, detail="Неизвестная игра")
+    game = await _resolved_game(user.id, body.game, persist=True)
     return await get_me(game=game, user=user)
 
 
@@ -448,9 +495,9 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
     existing = await get_user_with_settings(user.id, game)
     person_exists = is_person_registered(existing)
 
-    name = (body.name or (existing.name if existing else "")).strip()
+    name = (body.name or (existing.name if existing else "") or "").strip()
     age = body.age if body.age is not None else (existing.age if existing else None)
-    city = (body.city or (existing.city if existing else "")).strip()
+    city = (body.city or (existing.city if existing else "") or "").strip()
     if not person_exists and (not name or age is None or not city):
         raise HTTPException(status_code=400, detail="Заполни имя, возраст и город")
 
@@ -485,27 +532,38 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
     if wanted_kind and wanted_kind not in rating_kinds(game):
         raise HTTPException(status_code=400, detail="Неизвестная шкала поиска")
 
-    await save_user_and_settings(
-        user.id,
-        user.username,
-        {
-            "game": game,
-            "name": name,
-            "age": age,
-            "city": city,
-            "roles": roles,
-            "ratings": ratings,
-            "bio": bio.strip(),
-            "photo_id": photo,
-            "wanted_roles": wanted or None,
-            "wanted_rating_kind": wanted_kind,
-            "min_age": body.min_age,
-            "max_age": body.max_age,
-            "min_skill": body.min_skill if body.min_skill is not None else body.min_mmr,
-            "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
-        },
-    )
+    try:
+        await save_user_and_settings(
+            user.id,
+            user.username,
+            {
+                "game": game,
+                "name": name,
+                "age": age,
+                "city": city,
+                "roles": roles,
+                "ratings": ratings,
+                "bio": bio.strip(),
+                "photo_id": photo,
+                "wanted_roles": wanted or None,
+                "wanted_rating_kind": wanted_kind,
+                "min_age": body.min_age,
+                "max_age": body.max_age,
+                "min_skill": body.min_skill if body.min_skill is not None else body.min_mmr,
+                "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
+            },
+        )
+    except Exception as exc:
+        logger.exception("register failed for %s game=%s", user.id, game)
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось сохранить анкету. Попробуй ещё раз.",
+        ) from exc
+
+    await update_user_field(user.id, "last_active_game", game)
     profile = await get_user_with_settings(user.id, game)
+    if not profile:
+        raise HTTPException(status_code=500, detail="Анкета сохранена, но не прочиталась")
     return serialize_profile(profile, game=game, include_settings=True)
 
 
