@@ -165,9 +165,49 @@ button {
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
+}
+
+.actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.actions-bar .btn-undo {
+  flex: 0 0 22%;
+  max-width: 76px;
+}
+
+.actions-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.report-link {
+  display: block;
+  width: fit-content;
+  margin: 10px auto 0;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  opacity: 0.65;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.report-link:active {
+  opacity: 0.85;
 }
 
 .actions.three {
@@ -241,10 +281,6 @@ button {
   opacity: 0.42;
 }
 
-.btn-report.btn-action {
-  margin: 0 auto;
-}
-
 .btn-action:not(:disabled):active {
   transform: scale(0.94);
   background: transparent;
@@ -268,11 +304,6 @@ button {
   background: var(--accent-dim);
   border-color: rgba(47, 111, 237, 0.4);
   color: var(--accent);
-}
-
-.btn-action:not(:disabled):active {
-  background: transparent;
-  border: none;
 }
 
 .btn-like.btn-emoji:not(:disabled):active,

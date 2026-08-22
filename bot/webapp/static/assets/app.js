@@ -286,7 +286,7 @@ function navHtml() {
 }
 
 function actionIcon(name) {
-  return `<img class="action-ico" src="/assets/icons/action-${name}.png?v=20260822k" alt="" />`;
+  return `<img class="action-ico" src="/assets/icons/action-${name}.png?v=20260822l" alt="" />`;
 }
 
 function shell(_title, body, { showNav = true } = {}) {
@@ -585,13 +585,15 @@ async function renderBrowse() {
       "Лента",
       `
       ${profileCard(profile)}
-      <div class="actions">
+      <div class="actions-bar">
         <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo")}</button>
-        <button class="btn btn-action btn-dislike" id="dislike" title="Дизлайк">${actionIcon("dislike")}</button>
-        <button class="btn btn-action btn-msg" id="msg" title="Лайк с сообщением">${actionIcon("message")}</button>
-        <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
-        <button class="btn btn-action btn-report" id="report" title="Жалоба">${actionIcon("report")}</button>
+        <div class="actions-main">
+          <button class="btn btn-action btn-dislike" id="dislike" title="Дизлайк">${actionIcon("dislike")}</button>
+          <button class="btn btn-action btn-msg" id="msg" title="Лайк с сообщением">${actionIcon("message")}</button>
+          <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
+        </div>
       </div>
+      <button type="button" class="report-link" id="report">Пожаловаться</button>
       <p class="muted" style="text-align:center;margin-top:10px;font-size:0.85rem">
         Лайков с сообщением сегодня: ${state.me?.like_messages_remaining ?? "—"}
       </p>`
@@ -796,12 +798,10 @@ async function renderLikes() {
         <button class="btn btn-action btn-dislike" id="skip" title="Пропустить">${actionIcon("dislike")}</button>
         <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
       </div>
-      <div class="row" style="margin-top:10px;justify-content:center">
-        <button class="btn btn-action btn-report" id="report" title="Жалоба">${actionIcon("report")}</button>
-      </div>
       <div class="row" style="margin-top:10px">
         <button class="btn btn-ghost btn-block" id="next" ${index >= total - 1 ? "disabled" : ""}>Дальше →</button>
-      </div>`
+      </div>
+      <button type="button" class="report-link" id="report">Пожаловаться</button>`
     );
     bindNav(root);
     root.querySelector("#prev").onclick = () => {
