@@ -237,10 +237,13 @@ async def _ensure_multi_game_schema(conn) -> None:
     """))
     await conn.execute(text("""
         DO $$ BEGIN
-            ALTER TABLE swipes ADD CONSTRAINT uq_swipe_from_to_game
-            UNIQUE (from_user_id, to_user_id, game);
-        EXCEPTION WHEN duplicate_object THEN NULL;
-                   WHEN unique_violation THEN NULL;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'uq_swipe_from_to_game'
+            ) THEN
+                ALTER TABLE swipes ADD CONSTRAINT uq_swipe_from_to_game
+                UNIQUE (from_user_id, to_user_id, game);
+            END IF;
+        EXCEPTION WHEN others THEN NULL;
         END $$;
     """))
 
@@ -258,10 +261,13 @@ async def _ensure_multi_game_schema(conn) -> None:
     """))
     await conn.execute(text("""
         DO $$ BEGIN
-            ALTER TABLE teammate_ratings ADD CONSTRAINT uq_teammate_rating_from_to_game
-            UNIQUE (from_user_id, to_user_id, game);
-        EXCEPTION WHEN duplicate_object THEN NULL;
-                   WHEN unique_violation THEN NULL;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'uq_teammate_rating_from_to_game'
+            ) THEN
+                ALTER TABLE teammate_ratings ADD CONSTRAINT uq_teammate_rating_from_to_game
+                UNIQUE (from_user_id, to_user_id, game);
+            END IF;
+        EXCEPTION WHEN others THEN NULL;
         END $$;
     """))
 
