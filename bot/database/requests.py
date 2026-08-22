@@ -51,19 +51,30 @@ def _ratings_from_data(game: str, data: dict) -> list[tuple[str, int]]:
 
 
 async def _upsert_game_profile(session, user: User, game: str, data: dict) -> GameProfile:
+    """Создаёт/обновляет игровую анкету.
+
+    Важно: при cascade delete-orphan объект нужно сначала привязать к
+    relationship-коллекции, и только потом flush — иначе SQLAlchemy
+    удаляет только что вставленный профиль/рейтинг как «сироту».
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
     game = normalize_game(game)
-    profile = next((item for item in (user.game_profiles or []) if item.game == game), None)
+    profiles = user.game_profiles
+    if profiles is None:
+        user.game_profiles = []
+        profiles = user.game_profiles
+
+    profile = next((item for item in profiles if item.game == game), None)
     if profile is None:
-        profile = GameProfile(user_id=user.telegram_id, game=game)
-        session.add(profile)
+        profile = GameProfile(game=game)
+        profiles.append(profile)
         await session.flush()
-        if user.game_profiles is None:
-            user.game_profiles = []
-        user.game_profiles.append(profile)
 
     roles = valid_roles(game, data.get("roles") or data.get("positions") or profile.roles)
     if roles:
-        profile.roles = roles
+        profile.roles = list(roles)
+        flag_modified(profile, "roles")
     if "bio" in data:
         profile.bio = data.get("bio") or ""
     photo = data.get("photo_id") or data.get("photo_file_id")
@@ -73,24 +84,24 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
 
     ratings = _ratings_from_data(game, data)
     if ratings:
-        existing = {item.kind: item for item in (profile.ratings or [])}
+        # Триггерим загрузку коллекции до правок
+        current_ratings = list(profile.ratings or [])
+        existing = {item.kind: item for item in current_ratings}
         keep = set()
         for kind, value in ratings:
             keep.add(kind)
             if kind in existing:
                 existing[kind].value = value
             else:
-                session.add(GameRating(profile_id=profile.id, kind=kind, value=value))
+                profile.ratings.append(GameRating(kind=kind, value=value))
         for kind, item in existing.items():
             if kind not in keep:
-                await session.delete(item)
+                profile.ratings.remove(item)
+
+    if profile.settings is None:
+        profile.settings = SearchSettings()
 
     settings = profile.settings
-    if settings is None:
-        settings = SearchSettings(game_profile_id=profile.id)
-        session.add(settings)
-        profile.settings = settings
-
     if "wanted_roles" in data or "wanted_positions" in data:
         wanted = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
         settings.wanted_roles = wanted or None
@@ -114,7 +125,7 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
     """Сохраняет человека и игровую анкету (по умолчанию Dota)."""
     if await is_user_banned(telegram_id):
         logging.warning("Заблокированный пользователь %s попытался сохранить анкету.", telegram_id)
-        return
+        raise PermissionError("Аккаунт заблокирован")
     game = normalize_game(data.get("game"))
     async with session_maker() as session:
         try:
@@ -152,9 +163,15 @@ async def save_user_and_settings(telegram_id: int, username: str | None, data: d
                     user.status = ProfileStatus.ACTIVE
                 user.last_active_game = game
 
-            await _upsert_game_profile(session, user, game, data)
+            profile = await _upsert_game_profile(session, user, game, data)
             await session.commit()
-            logging.info("Пользователь %s сохранён (%s).", telegram_id, game)
+            logging.info(
+                "Пользователь %s сохранён (%s), complete=%s, ratings=%s",
+                telegram_id,
+                game,
+                profile.is_complete(),
+                len(profile.ratings or []),
+            )
         except Exception as e:
             await session.rollback()
             logging.error("Ошибка при сохранении в БД: %s", e)

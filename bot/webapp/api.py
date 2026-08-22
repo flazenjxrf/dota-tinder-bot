@@ -545,6 +545,7 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
                 "ratings": ratings,
                 "bio": bio.strip(),
                 "photo_id": photo,
+                "photo_file_id": photo,
                 "wanted_roles": wanted or None,
                 "wanted_rating_kind": wanted_kind,
                 "min_age": body.min_age,
@@ -564,6 +565,22 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
     profile = await get_user_with_settings(user.id, game)
     if not profile:
         raise HTTPException(status_code=500, detail="Анкета сохранена, но не прочиталась")
+    game_profile = profile.profile_for(game)
+    if not game_profile or not game_profile.is_complete():
+        logger.error(
+            "register incomplete after save user=%s game=%s profile=%s ratings=%s photo=%s roles=%s status=%s",
+            user.id,
+            game,
+            bool(game_profile),
+            len(game_profile.ratings or []) if game_profile else 0,
+            bool(game_profile.photo_file_id) if game_profile else False,
+            list(game_profile.roles or []) if game_profile else [],
+            game_profile.status if game_profile else None,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Анкета сохранилась неполностью. Попробуй ещё раз.",
+        )
     return serialize_profile(profile, game=game, include_settings=True)
 
 

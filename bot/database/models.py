@@ -97,7 +97,9 @@ class User(Base):
     @property
     def photo_file_id(self) -> str:
         profile = self.display_profile()
-        return profile.photo_file_id or "" if profile else ""
+        if not profile:
+            return ""
+        return profile.photo_file_id or ""
 
     @property
     def settings(self) -> "SearchSettings | None":

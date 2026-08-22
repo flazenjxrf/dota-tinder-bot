@@ -962,6 +962,9 @@ function renderRegister() {
           body: JSON.stringify(payload),
         });
         await refreshMe(r.game);
+        if (state.me.needs_registration || state.me.needs_game_profile) {
+          throw new Error("Анкета не сохранилась полностью. Нажми ещё раз.");
+        }
         state.tab = "browse";
         haptic("medium");
         toast("Анкета сохранена");
@@ -1829,8 +1832,9 @@ async function render() {
     return renderRegister();
   }
   if (state.me.needs_game_profile) {
-    if (state.register.mode !== "game" || state.register.game !== currentGame()) {
+    if (state.register.mode !== "game" || state.register.game !== currentGame() || !state.register._started) {
       state.register = emptyRegister(currentGame(), "game");
+      state.register._started = true;
     }
     return renderRegister();
   }
