@@ -286,7 +286,7 @@ function dualFilterPayload(lo, hi, fullMin, fullMax) {
 const state = {
   me: null,
   tab: "browse",
-  profileView: "main", // main | edit | settings
+  profileView: "main", // main | view | edit | settings
   browse: null,
   lastSwipedId: null,
   lastSwipedProfile: null,
@@ -1459,6 +1459,7 @@ async function renderMatches() {
 }
 
 async function renderProfile() {
+  if (state.profileView === "view") return renderProfilePreview();
   if (state.profileView === "edit") return renderEditProfile();
   if (state.profileView === "settings") return renderSearchSettings();
 
@@ -1516,7 +1517,7 @@ async function renderProfile() {
   root.querySelectorAll("[data-open-game]").forEach((btn) => {
     btn.onclick = async () => {
       try {
-        await openProfileGame(btn.dataset.openGame, "edit");
+        await openProfileGame(btn.dataset.openGame, "view");
       } catch (e) {
         toast(e.message);
       }
@@ -1600,7 +1601,7 @@ async function startGameRegistration(gameId) {
   render();
 }
 
-async function openProfileGame(gameId, view = "edit") {
+async function openProfileGame(gameId, view = "view") {
   if (gameId !== currentGame() || !state.me?.profile) {
     state.me = await api("/api/me/game", {
       method: "POST",
@@ -1624,7 +1625,7 @@ async function openProfileGame(gameId, view = "edit") {
       rating_kinds: kinds,
     };
     state.profileView = "settings";
-  } else {
+  } else if (view === "edit") {
     const ratings = {};
     for (const item of spec?.ratings || []) ratings[item.kind] = String(item.default ?? item.min);
     for (const item of profile.ratings || []) ratings[item.kind] = String(item.value);
@@ -1640,8 +1641,91 @@ async function openProfileGame(gameId, view = "edit") {
       photo_preview: profile.photo_url || "",
     };
     state.profileView = "edit";
+  } else {
+    state.edit = null;
+    state.settingsForm = null;
+    state.profileView = "view";
   }
   render();
+}
+
+function renderProfilePreview() {
+  const root = document.getElementById("app");
+  const p = state.me?.profile;
+  if (!p) {
+    state.profileView = "main";
+    return renderProfile();
+  }
+  const hidden = p.status === "hidden";
+  const canDeleteGame = (state.me?.games || []).filter((item) => item.has_profile).length > 1;
+
+  root.innerHTML = shell(
+    "Профиль",
+    `
+    <div class="stack">
+      <div class="row">
+        <button class="btn btn-ghost" id="back">← Назад</button>
+      </div>
+      <p class="muted" style="margin:0">Так тебя видят другие</p>
+      ${profileCard(p)}
+      <button class="btn btn-primary btn-block" id="edit">Редактировать</button>
+      <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
+      <button class="btn btn-ghost btn-block" id="toggle">${hidden ? "Показать анкету" : "Скрыть анкету"}</button>
+      ${
+        canDeleteGame
+          ? `<button class="btn btn-ghost btn-block" id="delete-game" style="color:var(--danger)">Удалить анкету ${escapeHtml(p.game_label || "")}</button>`
+          : ""
+      }
+    </div>`
+  );
+  bindNav(root);
+
+  root.querySelector("#back").onclick = () => {
+    state.profileView = "main";
+    render();
+  };
+  root.querySelector("#edit").onclick = async () => {
+    try {
+      await openProfileGame(currentGame(), "edit");
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  root.querySelector("#settings").onclick = async () => {
+    try {
+      await openProfileGame(currentGame(), "settings");
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  root.querySelector("#toggle").onclick = async () => {
+    try {
+      await api("/api/profile/status", {
+        method: "POST",
+        body: JSON.stringify({ status: hidden ? "active" : "hidden", game: currentGame() }),
+      });
+      await refreshMe(currentGame());
+      toast(hidden ? "Анкета видна" : "Анкета скрыта");
+      render();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  const deleteGame = root.querySelector("#delete-game");
+  if (deleteGame) {
+    deleteGame.onclick = async () => {
+      if (!confirm("Удалить только анкету этой игры?")) return;
+      try {
+        await api(`/api/games/${encodeURIComponent(currentGame())}`, { method: "DELETE" });
+        await refreshMe();
+        state.profileView = "main";
+        toast("Анкета игры удалена");
+        render();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  }
 }
 
 function renderRatingFields(kinds, values, game = currentGame()) {
@@ -1728,11 +1812,6 @@ function renderEditProfile() {
         <label class="btn btn-ghost btn-block file-btn" style="margin-top:8px">Сменить фото<input type="file" id="photo" accept="image/*" /></label>
       </div>
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
-      <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
-      <button class="btn btn-ghost btn-block" id="toggle">${state.me?.profile?.status === "hidden" ? "Показать анкету" : "Скрыть анкету"}</button>
-      ${(state.me?.games || []).filter((item) => item.has_profile).length > 1
-        ? `<button class="btn btn-ghost btn-block" id="delete-game" style="color:var(--danger)">Удалить анкету ${escapeHtml(spec?.label || "")}</button>`
-        : ""}
     </div>`
   );
   bindNav(root);
@@ -1749,50 +1828,10 @@ function renderEditProfile() {
   });
 
   root.querySelector("#back").onclick = () => {
-    state.profileView = "main";
+    state.profileView = "view";
     state.edit = null;
     render();
   };
-
-  root.querySelector("#settings").onclick = async () => {
-    try {
-      await openProfileGame(currentGame(), "settings");
-    } catch (err) {
-      toast(err.message);
-    }
-  };
-
-  root.querySelector("#toggle").onclick = async () => {
-    const hidden = state.me?.profile?.status === "hidden";
-    try {
-      await api("/api/profile/status", {
-        method: "POST",
-        body: JSON.stringify({ status: hidden ? "active" : "hidden", game: currentGame() }),
-      });
-      await refreshMe();
-      toast(hidden ? "Анкета видна" : "Анкета скрыта");
-      render();
-    } catch (err) {
-      toast(err.message);
-    }
-  };
-
-  const deleteGame = root.querySelector("#delete-game");
-  if (deleteGame) {
-    deleteGame.onclick = async () => {
-      if (!confirm("Удалить только анкету этой игры?")) return;
-      try {
-        await api(`/api/games/${encodeURIComponent(currentGame())}`, { method: "DELETE" });
-        await refreshMe();
-        state.profileView = "main";
-        state.edit = null;
-        toast("Анкета игры удалена");
-        render();
-      } catch (err) {
-        toast(err.message);
-      }
-    };
-  }
 
   root.querySelector("#photo").onchange = async () => {
     const file = root.querySelector("#photo").files?.[0];
@@ -1849,8 +1888,8 @@ function renderEditProfile() {
           photo_file_id: e.photo_file_id,
         }),
       });
-      await refreshMe();
-      state.profileView = "main";
+      await refreshMe(currentGame());
+      state.profileView = "view";
       state.edit = null;
       toast("Анкета обновлена");
       haptic("medium");
@@ -1902,7 +1941,7 @@ function renderSearchSettings() {
   bindSliders(root);
 
   root.querySelector("#back").onclick = () => {
-    state.profileView = "edit";
+    state.profileView = "view";
     state.settingsForm = null;
     render();
   };
@@ -1931,9 +1970,9 @@ function renderSearchSettings() {
           skill_filters: skillFilters,
         }),
       });
-      await refreshMe();
+      await refreshMe(currentGame());
       state.browse = null;
-      state.profileView = "edit";
+      state.profileView = "view";
       state.settingsForm = null;
       toast("Поиск обновлён");
       haptic("medium");
