@@ -56,19 +56,33 @@ def _ratings_from_data(game: str, data: dict) -> list[tuple[str, int]]:
 async def _upsert_game_profile(session, user: User, game: str, data: dict) -> GameProfile:
     """Создаёт/обновляет игровую анкету.
 
-    Важно: при cascade delete-orphan объект нужно сначала привязать к
-    relationship-коллекции, и только потом flush — иначе SQLAlchemy
-    удаляет только что вставленный профиль/рейтинг как «сироту».
+    В async нельзя трогать unloaded relationship (lazy load → MissingGreenlet).
+    Профиль всегда читаем/пишем явным запросом + selectinload.
     """
-    from sqlalchemy.orm.attributes import flag_modified
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy.orm.attributes import flag_modified, set_committed_value
+    from sqlalchemy import inspect as sa_inspect
 
     game = normalize_game(game)
-    # relationship всегда даёт коллекцию у persistent User; не подменяем её list()
-    profile = next((item for item in user.game_profiles if item.game == game), None)
+    result = await session.execute(
+        select(GameProfile)
+        .options(
+            selectinload(GameProfile.ratings),
+            selectinload(GameProfile.settings),
+        )
+        .where(GameProfile.user_id == user.telegram_id, GameProfile.game == game)
+    )
+    profile = result.scalar_one_or_none()
     if profile is None:
         profile = GameProfile(user_id=user.telegram_id, game=game)
-        user.game_profiles.append(profile)
+        session.add(profile)
         await session.flush()
+        # Синхронизируем коллекцию без lazy-load
+        if "game_profiles" in sa_inspect(user).unloaded:
+            set_committed_value(user, "game_profiles", [profile])
+        else:
+            if profile not in user.game_profiles:
+                user.game_profiles.append(profile)
 
     roles = valid_roles(game, data.get("roles") or data.get("positions") or profile.roles)
     if roles:
