@@ -22,7 +22,12 @@ function formatAgeRange(min, max) {
   if (max != null && max >= AGE_MAX) return "до 60+";
   return null;
 }
-const MMR_MIN = 0;
+const REPORT_REASONS = [
+  { id: "ads", label: "Реклама и сторонние ресурсы" },
+  { id: "offensive", label: "Оскорбления и травля" },
+  { id: "nsfw", label: "NSFW-контент" },
+  { id: "political", label: "Политика и разжигание ненависти" },
+];
 const MMR_MAX = 20000;
 const MMR_STEP = 100;
 
@@ -279,8 +284,9 @@ function navHtml() {
   `;
 }
 
-function actionIcon(name) {
-  return `<img class="action-ico" src="/assets/icons/action-${name}.png?v=20260822h" alt="" />`;
+function actionIcon(name, { disabled = false } = {}) {
+  const suffix = disabled ? "-disabled" : "";
+  return `<img class="action-ico" src="/assets/icons/action-${name}${suffix}.png?v=20260822i" alt="" />`;
 }
 
 function shell(_title, body, { showNav = true } = {}) {
@@ -580,10 +586,11 @@ async function renderBrowse() {
       `
       ${profileCard(profile)}
       <div class="actions">
-        <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo")}</button>
+        <button class="btn btn-action btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo", { disabled: !state.lastSwipedId })}</button>
         <button class="btn btn-action btn-dislike" id="dislike" title="Дизлайк">${actionIcon("dislike")}</button>
         <button class="btn btn-action btn-msg" id="msg" title="Лайк с сообщением">${actionIcon("message")}</button>
         <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
+        <button class="btn btn-action btn-report" id="report" title="Жалоба">${actionIcon("report")}</button>
       </div>
       <p class="muted" style="text-align:center;margin-top:10px;font-size:0.85rem">
         Лайков с сообщением сегодня: ${state.me?.like_messages_remaining ?? "—"}
@@ -637,10 +644,85 @@ async function renderBrowse() {
       }
     };
     root.querySelector("#msg").onclick = () => openMessageModal(profile, doSwipe);
+    root.querySelector("#report").onclick = () => openReportModal(profile);
   } catch (e) {
     root.innerHTML = shell("Лента", `<div class="empty"><strong>Ошибка</strong>${escapeHtml(e.message)}</div>`);
     bindNav(root);
   }
+}
+
+function openReportModal(profile, { onDone } = {}) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal";
+  overlay.innerHTML = `
+    <div class="modal-sheet stack">
+      <h2 style="margin:0;font-family:var(--font-display)">Жалоба</h2>
+      <p class="muted" style="margin:0">Выбери причину</p>
+      ${REPORT_REASONS.map(
+        (r) =>
+          `<button class="btn btn-ghost btn-block report-reason" data-reason="${r.id}">${escapeHtml(r.label)}</button>`
+      ).join("")}
+      <button class="btn btn-ghost btn-block" id="cancel">Отмена</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#cancel").onclick = () => overlay.remove();
+  overlay.onclick = (e) => {
+    if (e.target === overlay) overlay.remove();
+  };
+  overlay.querySelectorAll(".report-reason").forEach((btn) => {
+    btn.onclick = () => openReportCommentModal(profile, btn.dataset.reason, overlay, { onDone });
+  });
+}
+
+function openReportCommentModal(profile, reason, prevOverlay, { onDone } = {}) {
+  prevOverlay.remove();
+  const overlay = document.createElement("div");
+  overlay.className = "modal";
+  overlay.innerHTML = `
+    <div class="modal-sheet stack">
+      <h2 style="margin:0;font-family:var(--font-display)">Комментарий</h2>
+      <p class="muted" style="margin:0">Необязательно, до 500 символов</p>
+      <div class="field"><textarea id="report-comment" maxlength="500" placeholder="Дополнительные детали…"></textarea></div>
+      <div class="row">
+        <button class="btn btn-ghost" id="skip">Пропустить</button>
+        <button class="btn btn-primary" id="send">Отправить</button>
+      </div>
+      <button class="btn btn-ghost btn-block" id="cancel">Отмена</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const submit = async (comment) => {
+    try {
+      const res = await api("/api/report", {
+        method: "POST",
+        body: JSON.stringify({
+          to_user_id: profile.telegram_id,
+          reason,
+          comment: comment || null,
+        }),
+      });
+      overlay.remove();
+      state.lastSwipedId = null;
+      state.lastSwipedProfile = null;
+      state.browse = null;
+      toast(res.duplicate ? "Жалоба уже была отправлена" : "Жалоба отправлена");
+      haptic("light");
+      if (onDone) await onDone();
+      else render();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+
+  overlay.querySelector("#cancel").onclick = () => overlay.remove();
+  overlay.onclick = (e) => {
+    if (e.target === overlay) overlay.remove();
+  };
+  overlay.querySelector("#skip").onclick = () => submit(null);
+  overlay.querySelector("#send").onclick = () => {
+    const comment = overlay.querySelector("#report-comment").value.trim();
+    submit(comment || null);
+  };
 }
 
 function openMessageModal(profile, doSwipe) {
@@ -714,6 +796,9 @@ async function renderLikes() {
         <button class="btn btn-action btn-dislike" id="skip" title="Пропустить">${actionIcon("dislike")}</button>
         <button class="btn btn-action btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
       </div>
+      <div class="row" style="margin-top:10px;justify-content:center">
+        <button class="btn btn-action btn-report" id="report" title="Жалоба">${actionIcon("report")}</button>
+      </div>
       <div class="row" style="margin-top:10px">
         <button class="btn btn-ghost btn-block" id="next" ${index >= total - 1 ? "disabled" : ""}>Дальше →</button>
       </div>`
@@ -755,6 +840,15 @@ async function renderLikes() {
         toast(e.message);
       }
     };
+    root.querySelector("#report").onclick = () =>
+      openReportModal(profile, {
+        onDone: async () => {
+          await refreshMe();
+          state.likes = null;
+          state.likesIndex = 0;
+          render();
+        },
+      });
   } catch (e) {
     root.innerHTML = shell("Лайки", `<div class="empty"><strong>Ошибка</strong>${escapeHtml(e.message)}</div>`);
     bindNav(root);

@@ -165,8 +165,8 @@ button {
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 14px;
 }
 
@@ -225,10 +225,15 @@ button {
 .btn-action .action-ico {
   width: 100%;
   height: auto;
-  max-height: 58px;
+  max-height: 50px;
   display: block;
   object-fit: contain;
   pointer-events: none;
+}
+
+.btn-report.btn-action {
+  max-width: 72px;
+  margin: 0 auto;
 }
 
 .btn-action:not(:disabled):active {

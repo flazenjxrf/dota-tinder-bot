@@ -242,8 +242,9 @@ async def report_user(body: ReportBody, user: WebAppUser = CurrentUser):
     await _require_active_user(user.id)
     reason = ReportReason(body.reason)
     report_id = await add_report(user.id, body.to_user_id, reason, body.comment)
+    await add_swipe(user.id, body.to_user_id, ActionType.DISLIKE)
     if report_id is None:
-        raise HTTPException(status_code=400, detail="Жалоба на этого пользователя уже есть")
+        return {"ok": True, "duplicate": True}
     return {"ok": True, "id": report_id}
 
 
