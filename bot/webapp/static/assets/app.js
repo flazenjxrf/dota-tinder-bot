@@ -1651,7 +1651,7 @@ function renderRatingFields(kinds, values, game = currentGame()) {
       if (!item || item.no_value) return "";
       return sliderField({
         id: `rating-${item.kind}`,
-        label: gameSpec(game)?.multi_rating ? ratingPrompt(item.kind) : item.label,
+        label: item.label,
         min: item.min,
         max: item.max,
         step: item.step,
@@ -1681,10 +1681,10 @@ function renderEditProfile() {
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
       <h2>${escapeHtml(spec?.label || "Анкета")}</h2>
-      <div class="field"><label>Как тебя зовут?</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
+      <div class="field"><label>Имя</label><input id="name" maxlength="50" value="${escapeHtml(e.name)}" /></div>
       ${sliderField({
         id: "age",
-        label: "Твой возраст",
+        label: "Возраст",
         min: AGE_MIN,
         max: AGE_MAX,
         value: e.age || 18,
@@ -1692,13 +1692,12 @@ function renderEditProfile() {
         fmt: "age",
       })}
       <div class="field">
-        <label>В каком городе живешь?</label>
-        <p class="muted" style="margin:0 0 8px">Сперва будут попадаться игроки из твоего города</p>
+        <label>Город</label>
         <input id="city" maxlength="50" value="${escapeHtml(e.city)}" />
       </div>
       ${
         spec?.multi_rating
-          ? `<div class="field"><label>Где играешь?</label>
+          ? `<div class="field"><label>Где играешь</label>
               <div class="pos-grid" data-pos="edit-queues">
                 ${(spec.ratings || [])
                   .map(
@@ -1711,21 +1710,16 @@ function renderEditProfile() {
           : ""
       }
       <div class="field">
-        <label>На каких ролях обычно играешь?</label>
-        ${spec?.multi_rating ? `<p class="muted" style="margin:0 0 8px">Конечно, кому это надо, но вдруг тут профики собрались 😅</p>` : ""}
+        <label>Роли</label>
         ${posButtons(e.roles, "edit-pos", spec?.roles)}
       </div>
       ${renderRatingFields(kinds, e.ratings || {})}
       <div class="field">
-        <label>Расскажи о себе</label>
-        <p class="muted" style="margin:0 0 4px">Можешь оставить поле пустым, но разве это интересно?</p>
-        <p class="muted" style="margin:0 0 8px">${rulesLink("open-rules")}</p>
+        <label>О себе</label>
         <textarea id="bio" maxlength="500">${escapeHtml(e.bio)}</textarea>
       </div>
       <div class="field">
-        <label>Загрузи фотографию для анкеты</label>
-        <p class="muted" style="margin:0 0 4px">Это поможет привлечь внимание к твоей анкете</p>
-        <p class="muted" style="margin:0 0 8px">${rulesLink("open-rules-photo")}</p>
+        <label>Фото</label>
         ${
           e.photo_preview
             ? `<div class="preview-wrap"><img class="preview" src="${escapeHtml(e.photo_preview)}" alt="" /></div>`
@@ -1744,7 +1738,6 @@ function renderEditProfile() {
   bindNav(root);
   bindPos(root, "edit-pos", e.roles);
   bindSliders(root);
-  bindRulesLinks(root);
   root.querySelectorAll("[data-pos=edit-queues] button").forEach((btn) => {
     btn.onclick = () => {
       const kind = btn.dataset.kind;
@@ -1887,7 +1880,7 @@ function renderSearchSettings() {
       <div class="row">
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
-      <h2>Теперь настроим поиск</h2>
+      <h2>Настройки поиска</h2>
       <div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
       ${dualSliderField({
         minId: "min_age",
