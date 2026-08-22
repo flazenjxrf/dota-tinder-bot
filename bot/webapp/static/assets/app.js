@@ -507,6 +507,7 @@ function bindGameSwitch(root) {
         state.settingsForm = null;
         if (state.me.needs_game_profile) {
           state.register = emptyRegister(game, "game");
+          state.register._started = true;
         }
         haptic("light");
         render();
@@ -619,13 +620,14 @@ function emptyRegister(game = "dota", mode = "full") {
   };
 }
 
-function applyCopySource(r, gameId) {
+function applyCopySource(r, gameId, { bio = true, photo = true } = {}) {
   const source = (state.me?.games || []).find((item) => item.id === gameId);
-  r.copy_from = gameId;
   if (!source) return;
-  r.bio = source.bio || "";
-  r.photo_file_id = source.photo_file_id || "";
-  r.photo_preview = source.photo_url || "";
+  if (bio) r.bio = source.bio || "";
+  if (photo) {
+    r.photo_file_id = source.photo_file_id || "";
+    r.photo_preview = source.photo_url || "";
+  }
 }
 
 function copySources(r) {
@@ -651,27 +653,26 @@ function copyFromOtherHtml(r) {
     }`;
 }
 
-function bindCopyFromOther(root, r) {
+function bindCopyFromOther(root, r, opts = { bio: true, photo: true }) {
   const btn = root.querySelector("#copy-other");
   if (!btn) return;
   const sources = copySources(r);
+  const apply = (gameId) => {
+    applyCopySource(r, gameId, opts);
+    const source = sources.find((item) => item.id === gameId);
+    toast(source ? `Взяли из ${source.label}` : "Скопировали");
+    render();
+  };
   btn.onclick = () => {
     if (sources.length === 1) {
-      applyCopySource(r, sources[0].id);
-      toast(`Взяли из ${sources[0].label}`);
-      render();
+      apply(sources[0].id);
       return;
     }
     const picks = root.querySelector("#copy-other-picks");
     if (picks) picks.hidden = !picks.hidden;
   };
   root.querySelectorAll("[data-copy-pick]").forEach((el) => {
-    el.onclick = () => {
-      applyCopySource(r, el.dataset.copyPick);
-      const source = sources.find((item) => item.id === el.dataset.copyPick);
-      toast(source ? `Взяли из ${source.label}` : "Скопировали");
-      render();
-    };
+    el.onclick = () => apply(el.dataset.copyPick);
   });
 }
 
@@ -887,7 +888,7 @@ function registerSteps(r) {
       </div>`,
     bind: (root) => {
       bindRulesLinks(root);
-      bindCopyFromOther(root, r);
+      bindCopyFromOther(root, r, { bio: true, photo: false });
     },
     validate: (root) => {
       r.bio = root.querySelector("#bio").value.trim();
@@ -908,7 +909,7 @@ function registerSteps(r) {
       </div>`,
     bind: (root) => {
       bindRulesLinks(root);
-      bindCopyFromOther(root, r);
+      bindCopyFromOther(root, r, { bio: false, photo: true });
     },
   });
 
