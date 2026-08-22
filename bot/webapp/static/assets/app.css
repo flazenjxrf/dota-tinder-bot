@@ -215,6 +215,32 @@ button {
   color: #4a6fa8;
 }
 
+.btn-action {
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: 0;
+}
+
+.btn-action .action-ico {
+  width: 100%;
+  height: auto;
+  max-height: 58px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.btn-action:not(:disabled):active {
+  transform: scale(0.94);
+  background: transparent;
+  border: none;
+}
+
+.btn-action:disabled {
+  opacity: 0.38;
+}
+
 .btn-emoji {
   font-size: 1.45rem;
   line-height: 1;
@@ -232,6 +258,11 @@ button {
   background: var(--accent-dim);
   border-color: rgba(47, 111, 237, 0.4);
   color: var(--accent);
+}
+
+.btn-action:not(:disabled):active {
+  background: transparent;
+  border: none;
 }
 
 .btn-like.btn-emoji:not(:disabled):active,
