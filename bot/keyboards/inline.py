@@ -105,16 +105,11 @@ def get_consent_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_start_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    if WEBAPP_URL:
-        builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))
-    builder.button(text="📝 Заполнить анкету в чате", callback_data="start_registration")
-    builder.adjust(1)
-    return builder.as_markup()
+def get_start_keyboard() -> InlineKeyboardMarkup | None:
+    return get_webapp_keyboard()
 
 
-def get_webapp_keyboard(text: str = "📱 Открыть FeedEther") -> InlineKeyboardMarkup | None:
+def get_webapp_keyboard(text: str = "📱 Открыть Mini App") -> InlineKeyboardMarkup | None:
     if not WEBAPP_URL:
         return None
     builder = InlineKeyboardBuilder()
@@ -122,23 +117,12 @@ def get_webapp_keyboard(text: str = "📱 Открыть FeedEther") -> InlineKe
     return builder.as_markup()
 
 
-def get_miniapp_invite_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура после согласия: Mini App + запасной путь через чат."""
-    builder = InlineKeyboardBuilder()
-    if WEBAPP_URL:
-        builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))
-    builder.button(text="📝 Заполнить анкету в чате", callback_data="start_registration")
-    builder.adjust(1)
-    return builder.as_markup()
+def get_miniapp_invite_keyboard() -> InlineKeyboardMarkup | None:
+    return get_webapp_keyboard()
 
 
-def get_start_browse_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    if WEBAPP_URL:
-        builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))
-    builder.button(text="🔍 Искать тиммейтов", callback_data="start_browse")
-    builder.adjust(1)
-    return builder.as_markup()
+def get_start_browse_keyboard() -> InlineKeyboardMarkup | None:
+    return get_webapp_keyboard()
 
 def get_positions_keyboard(selected_positions: list[int]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()

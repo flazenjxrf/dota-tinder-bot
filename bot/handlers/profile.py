@@ -27,8 +27,9 @@ from bot.keyboards.inline import (
     SearchPositionCallback,
     get_delete_profile_confirm_keyboard,
     get_consent_keyboard,
+    get_webapp_keyboard,
 )
-from bot.handlers.start import CONSENT_TEXT
+from bot.middleware.consent import CONSENT_TEXT
 from bot.utils.bot_commands import CMD_PROFILE
 from bot.utils.city import format_city_display
 from bot.utils.reputation import format_reputation_line_from_counts
@@ -87,7 +88,7 @@ async def send_my_profile_message(message: Message, telegram_id: int):
     """Отправляет новую карточку профиля с фото и кнопками меню"""
     user = await get_user_with_settings(telegram_id)
     if not user or user.status == ProfileStatus.INCOMPLETE:
-        await message.answer("У тебя еще нет анкеты. Нажми /start, чтобы создать её!")
+        await message.answer("📱 Mini App", reply_markup=get_webapp_keyboard())
         return
 
     ban = await get_current_ban(telegram_id)

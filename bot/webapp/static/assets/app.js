@@ -322,13 +322,13 @@ function bindNav(root) {
 function renderConsent() {
   const root = document.getElementById("app");
   root.innerHTML = shell(
-    "Добро пожаловать",
+    "Привет!",
     `
     <div class="panel stack">
-      <p>FeedEther помогает найти друзей и тиммейтов в Dota 2.</p>
-      <p class="muted">Продолжая, ты соглашаешься на обработку и отображение данных анкеты другим игрокам.</p>
-      <p class="muted">тгк @flazenjxrf · youtube.com/@flazenjxrf</p>
-      <button class="btn btn-primary btn-block" id="accept">Принимаю</button>
+      <p>Я сделал этого бота, чтобы ты мог найти себе тиммейтов из своего города</p>
+      <p class="muted" style="margin:0">Мой тгк: @flazenjxrf<br/>Мой ютуб: youtube.com/@flazenjxrf</p>
+      <p class="muted">Продолжая, ты даешь согласие на обработку твоих данных и их показ другим пользователям. Также в боте будут приходить уведомления о лайках и мэтчах</p>
+      <button class="btn btn-primary btn-block" id="accept">Согласен</button>
     </div>
   `,
     { showNav: false }

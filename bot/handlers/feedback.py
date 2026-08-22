@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.database.requests import add_bug_feedback, get_user_with_settings
 from bot.database.models import ProfileStatus
-from bot.keyboards.inline import get_feedback_cancel_keyboard
+from bot.keyboards.inline import get_feedback_cancel_keyboard, get_webapp_keyboard
 from bot.states.fsm import FeedbackForm
 from bot.utils.bot_commands import CMD_FEEDBACK
 
@@ -25,7 +25,7 @@ FEEDBACK_PROMPT = (
 async def _require_registered_user(message: Message) -> bool:
     user = await get_user_with_settings(message.from_user.id)
     if not user or user.status == ProfileStatus.INCOMPLETE:
-        await message.answer("Сначала заполни анкету через /start")
+        await message.answer("📱 Mini App", reply_markup=get_webapp_keyboard())
         return False
     return True
 

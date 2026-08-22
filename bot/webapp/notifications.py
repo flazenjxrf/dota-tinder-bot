@@ -1,4 +1,4 @@
-"""Пуш-уведомления из Mini App через Bot API (мэтчи, лайки)."""
+"""Telegram-уведомления пользователям о лайках и мэтчах."""
 from __future__ import annotations
 
 import logging
@@ -8,11 +8,12 @@ from aiogram import Bot
 
 from bot.database.models import User
 from bot.database.requests import get_pending_likes_ids, get_user_with_settings
+from bot.keyboards.inline import get_webapp_keyboard
 from bot.utils.match import get_user_link, send_match_notification
 
 logger = logging.getLogger(__name__)
 
-LIKE_NOTIFY_THRESHOLDS = {1, 5, 20}
+LIKE_NOTIFY_THRESHOLDS = {1, 3, 7, 12, 20}
 
 
 def _crossed_threshold(old_count: int, new_count: int) -> int | None:
@@ -20,6 +21,21 @@ def _crossed_threshold(old_count: int, new_count: int) -> int | None:
         if old_count < threshold <= new_count:
             return threshold
     return None
+
+
+def format_pending_likes_notification(count: int) -> str:
+    if count == 1:
+        likes_text = "1 неотвеченный лайк"
+    else:
+        likes_text = f"{count} неотвеченных лайков"
+    return (
+        f"🔔 <b>У тебя {likes_text}!</b>\n\n"
+        f"Открой Mini App, чтобы посмотреть анкеты."
+    )
+
+
+def _miniapp_markup():
+    return get_webapp_keyboard()
 
 
 async def notify_match(bot: Bot, from_user_id: int, to_user_id: int) -> None:
@@ -60,22 +76,16 @@ async def notify_like_threshold(bot: Bot, to_user_id: int, from_user_id: int) ->
         return
 
     new_count = len(pending_ids)
-    # Порог считаем как «только что появился этот лайк» → old = new - 1
     threshold = _crossed_threshold(new_count - 1, new_count)
     if threshold is None:
         return
 
-    if new_count == 1:
-        likes_text = "1 неотвеченный лайк"
-    else:
-        likes_text = f"{new_count} неотвеченных лайков"
-
-    text = (
-        f"🔔 <b>У тебя {likes_text}!</b>\n\n"
-        f"Открой Mini App или /likes, чтобы посмотреть анкеты."
-    )
     try:
-        await bot.send_message(to_user_id, text)
+        await bot.send_message(
+            to_user_id,
+            format_pending_likes_notification(threshold),
+            reply_markup=_miniapp_markup(),
+        )
     except Exception:
         logger.exception("Не удалось отправить уведомление о лайках %s", to_user_id)
 
@@ -89,9 +99,31 @@ async def notify_like_with_message(
     text = (
         f"💌 <b>{escape(sender.name)}</b> отправил(а) тебе лайк с сообщением:\n\n"
         f"<i>«{escape(message_text)}»</i>\n\n"
-        f"Открой Mini App или /likes, чтобы ответить."
+        f"Открой Mini App, чтобы ответить."
     )
     try:
-        await bot.send_message(to_user_id, text)
+        await bot.send_message(to_user_id, text, reply_markup=_miniapp_markup())
     except Exception:
         logger.exception("Не удалось отправить лайк с сообщением %s", to_user_id)
+
+
+async def process_swipe_notifications(
+    bot: Bot,
+    from_user_id: int,
+    to_user_id: int,
+    *,
+    is_match: bool,
+    like_message: str | None = None,
+) -> None:
+    """Уведомления после свайпа: мэтч, порог лайков или лайк с сообщением."""
+    if is_match:
+        await notify_match(bot, from_user_id, to_user_id)
+        return
+
+    if like_message:
+        sender = await get_user_with_settings(from_user_id)
+        if sender:
+            await notify_like_with_message(bot, to_user_id, sender, like_message)
+        return
+
+    await notify_like_threshold(bot, to_user_id, from_user_id)

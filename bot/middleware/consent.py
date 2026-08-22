@@ -14,9 +14,13 @@ logger = logging.getLogger(__name__)
 CONSENT_PENDING_MESSAGE = "consent_pending_message"
 CONSENT_GATE_SHOWN = "consent_gate_shown"
 
-EXISTING_USER_CONSENT_TEXT = (
-    "Чтобы продолжить, подпишись на тгк @flazenjxrf и подтверди согласие "
-    "на обработку и отображение данных анкеты другим игрокам для поиска тиммейтов."
+CONSENT_TEXT = (
+    "Привет!\n"
+    "Я сделал этого бота, чтобы ты мог найти себе тиммейтов из своего города\n\n"
+    "Мой тгк: @flazenjxrf\n"
+    "Мой ютуб: youtube.com/@flazenjxrf\n\n"
+    "Продолжая, ты даешь согласие на обработку твоих данных и их показ другим "
+    "пользователям. Также в боте будут приходить уведомления о лайках и мэтчах"
 )
 
 _REGISTRATION_STATE_PREFIXES = (
@@ -53,12 +57,12 @@ async def _send_consent_prompt(event: TelegramObject, state_data: dict) -> None:
 
     if isinstance(event, Message):
         if not already_shown:
-            await event.answer(EXISTING_USER_CONSENT_TEXT, reply_markup=keyboard)
+            await event.answer(CONSENT_TEXT, reply_markup=keyboard)
         return
 
     if isinstance(event, CallbackQuery):
         if not already_shown:
-            await event.message.answer(EXISTING_USER_CONSENT_TEXT, reply_markup=keyboard)
+            await event.message.answer(CONSENT_TEXT, reply_markup=keyboard)
         await event.answer("Сначала прими соглашение", show_alert=True)
 
 

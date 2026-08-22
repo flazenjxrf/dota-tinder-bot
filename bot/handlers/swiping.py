@@ -2,7 +2,6 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from html import escape
 from contextlib import suppress
 
 from bot.database.requests import (
@@ -10,7 +9,6 @@ from bot.database.requests import (
     add_swipe,
     undo_swipe,
     get_user_with_settings,
-    get_pending_likes_ids,
     get_like_messages_remaining_today,
     get_reputation_counts,
     DAILY_LIKE_MESSAGE_LIMIT,
@@ -29,8 +27,8 @@ from bot.keyboards.reply import REMOVE_KEYBOARD
 from bot.utils.bot_commands import CMD_BROWSE
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
-from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 from bot.utils.reputation import format_reputation_line_from_counts
+from bot.webapp.notifications import process_swipe_notifications
 from bot.states.fsm import SwipingForm
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
@@ -48,7 +46,6 @@ HIDDEN_PROFILE_MSG = (
     "Чтобы смотреть чужие анкеты, включи её: 👤 Моя анкета → Показать анкету."
 )
 
-LIKE_NOTIFY_THRESHOLDS = {1, 5, 20}
 UNDO_PROFILE_KEY = "undo_profile_id"
 
 
@@ -68,25 +65,6 @@ async def clear_like_message_state(state: FSMContext) -> None:
     await state.update_data(like_message_to_user_id=None, **{UNDO_PROFILE_KEY: undo_profile_id})
 
 
-def format_pending_likes_notification(count: int) -> str:
-    if count == 1:
-        likes_text = "1 неотвеченный лайк"
-    else:
-        likes_text = f"{count} неотвеченных лайков"
-    return (
-        f"🔔 <b>У тебя {likes_text}!</b>\n\n"
-        f"Загляни в /likes, чтобы посмотреть анкеты."
-    )
-
-
-def _crossed_like_notify_threshold(old_count: int, new_count: int) -> int | None:
-    """Возвращает порог (1, 5 или 20), если количество лайков его только что пересекло."""
-    for threshold in sorted(LIKE_NOTIFY_THRESHOLDS):
-        if old_count < threshold <= new_count:
-            return threshold
-    return None
-
-
 def build_browse_caption(profile: User, reputation: str = "") -> str:
     pos_names = [positions_mapping[p] for p in sorted(profile.positions)]
     pos_str = ", ".join(pos_names)
@@ -97,85 +75,6 @@ def build_browse_caption(profile: User, reputation: str = "") -> str:
         f"🏆 MMR: {profile.mmr}{reputation}\n\n"
         f"💬 : {profile.bio}"
     )
-
-
-def format_like_with_message_notification(sender_name: str, message_text: str) -> str:
-    return (
-        f"💌 <b>{sender_name}</b> отправил(а) тебе лайк с сообщением:\n\n"
-        f"<i>«{escape(message_text)}»</i>\n\n"
-        f"Загляни в /likes, чтобы ответить."
-    )
-
-
-async def _notify_pending_likes_threshold(
-    bot,
-    to_user_id: int,
-    from_user_id: int,
-) -> None:
-    """Уведомляет только при пересечении порога 1, 5 или 20 неотвеченных лайков."""
-    pending_ids = await get_pending_likes_ids(to_user_id)
-    if from_user_id not in pending_ids:
-        return
-
-    new_count = len(pending_ids)
-    threshold = _crossed_like_notify_threshold(new_count - 1, new_count)
-    if not threshold:
-        return
-
-    try:
-        await bot.send_message(
-            chat_id=to_user_id,
-            text=format_pending_likes_notification(threshold),
-        )
-    except Exception:
-        pass
-
-
-async def process_like_notifications(
-    bot,
-    viewer_message: Message,
-    from_user_id: int,
-    to_user_id: int,
-    is_match: bool,
-    from_username: str | None = None,
-    like_message: str | None = None,
-):
-    """Уведомления после лайка: мэтч, пороги неотвеченных лайков или лайк с сообщением."""
-    if is_match:
-        me = await get_user_with_settings(from_user_id)
-        other = await get_user_with_settings(to_user_id)
-
-        my_link = get_user_link(from_user_id, me.name, from_username)
-        other_link = get_user_link(to_user_id, other.name, other.username)
-
-        await send_match_notification_via_message(
-            viewer_message,
-            f"Ты понравился игроку {other_link} в ответ!",
-            other,
-            other_link,
-        )
-
-        try:
-            await send_match_notification(
-                bot,
-                to_user_id,
-                f"Игрок {my_link} ответил тебе взаимностью!",
-                me,
-                my_link,
-            )
-        except Exception:
-            pass
-    elif like_message:
-        me = await get_user_with_settings(from_user_id)
-        try:
-            await bot.send_message(
-                chat_id=to_user_id,
-                text=format_like_with_message_notification(me.name, like_message),
-            )
-        except Exception:
-            pass
-    else:
-        await _notify_pending_likes_threshold(bot, to_user_id, from_user_id)
 
 
 async def show_browse_profile(
@@ -282,13 +181,11 @@ async def process_swipe(callback: CallbackQuery, callback_data: SwipeCallback, s
     # 1. Записываем свайп в БД
     is_match = await add_swipe(from_user_id, to_user_id, action)
 
-    await process_like_notifications(
+    await process_swipe_notifications(
         callback.bot,
-        callback.message,
         from_user_id,
         to_user_id,
-        is_match,
-        from_username=callback.from_user.username,
+        is_match=is_match,
     )
 
     if action == ActionType.DISLIKE:
@@ -434,13 +331,11 @@ async def finish_like_with_message(message: Message, state: FSMContext):
     await set_undo_profile(state, None)
     await clear_like_message_state(state)
 
-    await process_like_notifications(
+    await process_swipe_notifications(
         message.bot,
-        message,
         from_user_id,
         to_user_id,
-        is_match,
-        from_username=message.from_user.username,
+        is_match=is_match,
         like_message=text,
     )
 

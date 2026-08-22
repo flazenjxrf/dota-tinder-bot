@@ -16,8 +16,8 @@ from bot.keyboards.reply import REMOVE_KEYBOARD
 from bot.utils.bot_commands import CMD_LIKES
 from bot.utils.profile_display import send_profile_card
 from bot.utils.city import format_city_display
-from bot.utils.match import get_user_link, send_match_notification_via_message, send_match_notification
 from bot.utils.reputation import format_reputation_line_from_counts
+from bot.webapp.notifications import notify_match
 from bot.handlers.banned import reject_banned_message, reject_banned_callback
 
 router = Router()
@@ -37,7 +37,7 @@ async def show_pending_like_at_index(message_or_callback, user_id: int, index: i
     if not next_user:
         text = (
             "🎯 <b>Все входящие лайки просмотрены!</b>\n\n"
-            "Пока новых лайков нет. Поищи напарников через /browse."
+            "Пока новых лайков нет. Открой Mini App."
         )
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()
@@ -107,28 +107,7 @@ async def process_likeback(callback: CallbackQuery, callback_data: LikeBackCallb
     is_match = await add_swipe(from_user_id, to_user_id, action)
 
     if is_match and action == ActionType.LIKE:
-        me = await get_user_with_settings(from_user_id)
-        other = await get_user_with_settings(to_user_id)
-
-        my_link = get_user_link(from_user_id, me.name, callback.from_user.username)
-        other_link = get_user_link(to_user_id, other.name, other.username)
-
-        try:
-            await send_match_notification_via_message(
-                callback.message,
-                f"Ты ответил взаимностью игроку {other_link}!",
-                other,
-                other_link,
-            )
-            await send_match_notification(
-                callback.bot,
-                to_user_id,
-                f"Игрок {my_link} ответил тебе взаимностью в «Моих лайках»!",
-                me,
-                my_link,
-            )
-        except Exception:
-            pass
+        await notify_match(callback.bot, from_user_id, to_user_id)
 
     await callback.answer()
     await show_pending_like_at_index(callback, from_user_id, callback_data.index)

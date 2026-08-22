@@ -167,8 +167,7 @@ async def swipe(
             await notify_like_with_message(bot, body.to_user_id, me, message)
         else:
             await notify_like_threshold(bot, body.to_user_id, user.id)
-
-    if is_match:
+    elif is_match:
         await notify_match(bot, user.id, body.to_user_id)
 
     return {
@@ -369,7 +368,7 @@ async def upload_photo(
         logger.exception("upload_photo failed for %s", user.id)
         raise HTTPException(
             status_code=400,
-            detail="Не удалось загрузить фото. Сначала напиши боту /start",
+            detail="Не удалось загрузить фото. Открой Mini App через бота.",
         ) from exc
 
     if not message.photo:

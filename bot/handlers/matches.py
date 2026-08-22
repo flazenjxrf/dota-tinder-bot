@@ -41,7 +41,7 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
     if not partner:
         text = (
             "💚 <b>У тебя пока нет мэтчей.</b>\n\n"
-            "Лайкай анкеты через /browse или отвечай на входящие через /likes!"
+            "Открой Mini App."
         )
         if isinstance(message_or_callback, CallbackQuery):
             await message_or_callback.message.delete()

@@ -134,10 +134,6 @@ async def finish_registration(user, message_obj: Message, state: FSMContext):
 
     await state.clear()
 
-    await message_obj.answer(
-        "✅ Все настройки успешно сохранены!\n\n"
-        "Теперь ты можешь искать тимейтов.",
-        reply_markup=get_start_browse_keyboard(),
-    )
+    await message_obj.answer("📱 Mini App", reply_markup=get_start_browse_keyboard())
     from bot.middleware.keyboard import mark_keyboard_cleared
     mark_keyboard_cleared(user.id)
