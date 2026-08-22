@@ -26,6 +26,27 @@ async def init_models():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS normalized_city VARCHAR(50)"
         ))
+        # users.status: уводим PG-enum в VARCHAR (как у game_profiles), иначе INSERT
+        # с 'active'/'ACTIVE' регулярно валится на Railway
+        await conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE users
+                    ALTER COLUMN status TYPE VARCHAR(20)
+                    USING lower(status::text);
+            EXCEPTION WHEN others THEN
+                BEGIN
+                    ALTER TABLE users
+                        ALTER COLUMN status TYPE VARCHAR(20)
+                        USING lower(status::character varying);
+                EXCEPTION WHEN others THEN NULL;
+                END;
+            END $$;
+        """))
+        await conn.execute(text("""
+            UPDATE users
+            SET status = lower(status::text)
+            WHERE status IS NOT NULL AND status::text <> lower(status::text)
+        """))
         await conn.execute(text(
             "ALTER TABLE swipes ADD COLUMN IF NOT EXISTS message TEXT"
         ))

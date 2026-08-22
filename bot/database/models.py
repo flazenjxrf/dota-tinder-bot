@@ -54,7 +54,14 @@ class User(Base):
     age: Mapped[int] = mapped_column(Integer)
     city: Mapped[str | None] = mapped_column(String(50), nullable=True)
     normalized_city: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    status: Mapped[ProfileStatus] = mapped_column(Enum(ProfileStatus), default=ProfileStatus.INCOMPLETE)
+    status: Mapped[ProfileStatus] = mapped_column(
+        Enum(
+            ProfileStatus,
+            values_callable=lambda obj: [e.value for e in obj],
+            native_enum=False,
+        ),
+        default=ProfileStatus.INCOMPLETE,
+    )
     last_active_game: Mapped[str] = mapped_column(String(20), default=DEFAULT_GAME)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 

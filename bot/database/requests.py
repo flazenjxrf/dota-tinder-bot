@@ -37,17 +37,20 @@ def is_game_searching(user: User | None, game: str | None = None) -> bool:
 def _ratings_from_data(game: str, data: dict) -> list[tuple[str, int]]:
     raw = data.get("ratings")
     pairs: list[tuple[str, int]] = []
+    known = set(rating_kinds(game))
     if raw:
         for item in raw:
             kind = item.get("kind") if isinstance(item, dict) else None
             value = item.get("value") if isinstance(item, dict) else None
-            if not kind or value is None:
+            if not kind or kind not in known or value is None:
                 continue
-            pairs.append((kind, clamp_rating(game, kind, int(value))))
+            try:
+                pairs.append((kind, clamp_rating(game, kind, int(value))))
+            except (TypeError, ValueError):
+                continue
     elif data.get("mmr") is not None and game == "dota":
         pairs.append(("mmr", clamp_rating(game, "mmr", int(data["mmr"]))))
-    known = set(rating_kinds(game))
-    return [(kind, value) for kind, value in pairs if kind in known]
+    return pairs
 
 
 async def _upsert_game_profile(session, user: User, game: str, data: dict) -> GameProfile:
@@ -60,15 +63,11 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
     from sqlalchemy.orm.attributes import flag_modified
 
     game = normalize_game(game)
-    profiles = user.game_profiles
-    if profiles is None:
-        user.game_profiles = []
-        profiles = user.game_profiles
-
-    profile = next((item for item in profiles if item.game == game), None)
+    # relationship всегда даёт коллекцию у persistent User; не подменяем её list()
+    profile = next((item for item in user.game_profiles if item.game == game), None)
     if profile is None:
-        profile = GameProfile(game=game)
-        profiles.append(profile)
+        profile = GameProfile(user_id=user.telegram_id, game=game)
+        user.game_profiles.append(profile)
         await session.flush()
 
     roles = valid_roles(game, data.get("roles") or data.get("positions") or profile.roles)
@@ -84,7 +83,6 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
 
     ratings = _ratings_from_data(game, data)
     if ratings:
-        # Триггерим загрузку коллекции до правок
         current_ratings = list(profile.ratings or [])
         existing = {item.kind: item for item in current_ratings}
         keep = set()
@@ -94,12 +92,12 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
                 existing[kind].value = value
             else:
                 profile.ratings.append(GameRating(kind=kind, value=value))
-        for kind, item in existing.items():
+        for kind, item in list(existing.items()):
             if kind not in keep:
                 profile.ratings.remove(item)
 
     if profile.settings is None:
-        profile.settings = SearchSettings()
+        profile.settings = SearchSettings(game_profile_id=profile.id)
 
     settings = profile.settings
     if "wanted_roles" in data or "wanted_positions" in data:

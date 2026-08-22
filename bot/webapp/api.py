@@ -554,11 +554,16 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
                 "max_skill": body.max_skill if body.max_skill is not None else body.max_mmr,
             },
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("register failed for %s game=%s", user.id, game)
+        logger.exception("register failed for %s game=%s: %s", user.id, game, exc)
+        hint = str(exc).strip()
+        if len(hint) > 160:
+            hint = hint[:157] + "…"
         raise HTTPException(
             status_code=400,
-            detail="Не удалось сохранить анкету. Попробуй ещё раз.",
+            detail=f"Не удалось сохранить анкету: {hint}" if hint else "Не удалось сохранить анкету. Попробуй ещё раз.",
         ) from exc
 
     await update_user_field(user.id, "last_active_game", game)
