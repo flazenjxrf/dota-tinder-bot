@@ -6,8 +6,22 @@ const POSITIONS = [
   { id: 4, label: "Саппорт" },
 ];
 
-const AGE_MIN = 14;
-const AGE_MAX = 99;
+const AGE_MIN = 12;
+const AGE_MAX = 60;
+
+function formatAge(value) {
+  return Number(value) >= AGE_MAX ? `${AGE_MAX}+` : String(value);
+}
+
+function formatAgeRange(min, max) {
+  const lo = min != null && min > AGE_MIN ? min : null;
+  const hi = max != null && max < AGE_MAX ? max : null;
+  if (lo && hi) return `${lo}–${hi}`;
+  if (lo) return `от ${lo}`;
+  if (hi) return `до ${hi}`;
+  if (max != null && max >= AGE_MAX) return "до 60+";
+  return null;
+}
 const MMR_MIN = 0;
 const MMR_MAX = 20000;
 const MMR_STEP = 100;
@@ -69,11 +83,18 @@ function bindSliders(root) {
   root.querySelectorAll('input[type="range"]').forEach((input) => {
     const updateLabel = () => {
       root.querySelectorAll(`[data-for="${input.id}"]`).forEach((el) => {
-        el.textContent = input.id.includes("mmr") ? formatMmr(input.value) : input.value;
+        if (input.id.includes("mmr")) el.textContent = formatMmr(input.value);
+        else if (input.id.includes("age")) el.textContent = formatAge(input.value);
+        else el.textContent = input.value;
       });
     };
     input.addEventListener("input", () => {
       const dual = input.closest("[data-dual]");
+      const fmt = (id, val) => {
+        if (id.includes("mmr")) return formatMmr(val);
+        if (id.includes("age")) return formatAge(val);
+        return String(val);
+      };
       if (dual) {
         const [minId, maxId] = dual.dataset.dual.split("|");
         const minEl = root.querySelector(`#${minId}`);
@@ -90,10 +111,10 @@ function bindSliders(root) {
             lo = hi;
           }
           root.querySelectorAll(`[data-for="${minId}"]`).forEach((el) => {
-            el.textContent = minId.includes("mmr") ? formatMmr(lo) : String(lo);
+            el.textContent = fmt(minId, lo);
           });
           root.querySelectorAll(`[data-for="${maxId}"]`).forEach((el) => {
-            el.textContent = maxId.includes("mmr") ? formatMmr(hi) : String(hi);
+            el.textContent = fmt(maxId, hi);
           });
           return;
         }
@@ -361,6 +382,7 @@ function renderRegister() {
           min: AGE_MIN,
           max: AGE_MAX,
           value: r.age || 18,
+          format: formatAge,
         })}
         <button class="btn btn-primary btn-block" id="next">Дальше</button>
       </div>`,
@@ -416,6 +438,7 @@ function renderRegister() {
           max: AGE_MAX,
           minValue: r.min_age ?? AGE_MIN,
           maxValue: r.max_age ?? AGE_MAX,
+          format: formatAge,
         })}
         ${dualSliderField({
           minId: "min_mmr",
@@ -818,7 +841,7 @@ async function renderProfile() {
     .join(", ");
   const filters = [
     wanted ? `Роли: ${wanted}` : "Роли: любые",
-    s.min_age || s.max_age ? `Возраст: ${s.min_age ?? "—"}–${s.max_age ?? "—"}` : null,
+    s.min_age || s.max_age ? `Возраст: ${formatAgeRange(s.min_age, s.max_age) ?? "—"}` : null,
     s.min_mmr || s.max_mmr ? `MMR: ${s.min_mmr ?? "—"}–${s.max_mmr ?? "—"}` : null,
   ]
     .filter(Boolean)
@@ -937,6 +960,7 @@ function renderEditProfile() {
         min: AGE_MIN,
         max: AGE_MAX,
         value: e.age || 18,
+        format: formatAge,
       })}
       <div class="field"><label>Город</label><input id="city" maxlength="50" value="${escapeHtml(e.city)}" /></div>
       ${sliderField({
@@ -999,7 +1023,7 @@ function renderEditProfile() {
 
       if (!e.name) throw new Error("Введи имя");
       const age = Number(e.age);
-      if (!age || age < AGE_MIN || age > AGE_MAX) throw new Error(`Возраст ${AGE_MIN}–${AGE_MAX}`);
+      if (!age || age < AGE_MIN || age > AGE_MAX) throw new Error(`Возраст ${AGE_MIN}–${AGE_MAX}+`);
       if (!e.city) throw new Error("Укажи город");
       const mmr = Number(e.mmr);
       if (Number.isNaN(mmr) || mmr < MMR_MIN) throw new Error("Некорректный MMR");
@@ -1056,6 +1080,7 @@ function renderSearchSettings() {
         max: AGE_MAX,
         minValue: f.min_age,
         maxValue: f.max_age,
+        format: formatAge,
       })}
       ${dualSliderField({
         minId: "min_mmr",

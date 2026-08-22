@@ -37,7 +37,7 @@ class FeedbackBody(BaseModel):
 
 class ProfileUpdateBody(BaseModel):
     name: str | None = Field(default=None, max_length=50)
-    age: int | None = Field(default=None, ge=14, le=99)
+    age: int | None = Field(default=None, ge=12, le=60)
     city: str | None = Field(default=None, max_length=50)
     mmr: int | None = Field(default=None, ge=0, le=20000)
     positions: list[int] | None = None
@@ -47,15 +47,15 @@ class ProfileUpdateBody(BaseModel):
 
 class SettingsUpdateBody(BaseModel):
     wanted_positions: list[int] | None = None
-    min_age: int | None = Field(default=None, ge=14, le=99)
-    max_age: int | None = Field(default=None, ge=14, le=99)
+    min_age: int | None = Field(default=None, ge=12, le=60)
+    max_age: int | None = Field(default=None, ge=12, le=60)
     min_mmr: int | None = Field(default=None, ge=0, le=20000)
     max_mmr: int | None = Field(default=None, ge=0, le=20000)
 
 
 class RegisterBody(BaseModel):
     name: str = Field(min_length=1, max_length=50)
-    age: int = Field(ge=14, le=99)
+    age: int = Field(ge=12, le=60)
     city: str = Field(min_length=1, max_length=50)
     mmr: int = Field(ge=0, le=20000)
     positions: list[int] = Field(min_length=1)
