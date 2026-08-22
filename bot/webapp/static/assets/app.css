@@ -596,6 +596,95 @@ button {
   color: var(--accent);
 }
 
+.anketa-home {
+  display: grid;
+  gap: 16px;
+}
+
+.anketa-home-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.anketa-home-head .city {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.anketa-home-head .section-label {
+  margin: 18px 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.anketa-list {
+  display: grid;
+  gap: 10px;
+}
+
+.anketa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg1);
+  box-shadow: var(--card-shadow);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.anketa-row:active {
+  transform: scale(0.99);
+}
+
+.anketa-row .anketa-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.anketa-status {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: #fff;
+}
+
+.anketa-status.on {
+  color: var(--accent);
+  border-color: rgba(47, 111, 237, 0.35);
+  background: var(--accent-dim);
+}
+
+.anketa-row.add {
+  justify-content: center;
+  color: var(--accent);
+  font-weight: 700;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.anketa-footer {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
 .game-switch {
   display: flex;
   gap: 8px;

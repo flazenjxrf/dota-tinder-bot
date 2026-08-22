@@ -1463,70 +1463,168 @@ async function renderProfile() {
   if (state.profileView === "settings") return renderSearchSettings();
 
   const root = document.getElementById("app");
-  const p = state.me?.profile;
-  if (!p) {
+  const person = state.me?.person || state.me?.profile;
+  const games = state.me?.games || [];
+  const ready = games.filter((item) => item.has_profile);
+  const missing = games.filter((item) => !item.has_profile);
+
+  if (!person && !ready.length) {
     root.innerHTML = shell("Профиль", `<div class="empty"><strong>Нет анкеты</strong></div>`);
     bindNav(root);
     return;
   }
-  const hidden = p.status === "hidden";
-  const s = p.settings || {};
-  const spec = gameSpec();
-  const wantedIds = s.wanted_roles || s.wanted_positions || [];
-  const wanted = wantedIds
-    .map((id) => (spec?.roles || []).find((x) => x.id === id)?.label)
-    .filter(Boolean)
-    .join(", ");
-  const skillBits = (s.skill_filters || [])
-    .map(formatSkillFilterSummary)
-    .filter(Boolean);
-  if (!skillBits.length) {
-    const searchSpec = ratingOf(s.wanted_rating_kind);
-    const minSkill = s.min_skill ?? s.min_mmr;
-    const maxSkill = s.max_skill ?? s.max_mmr;
-    if (searchSpec && (minSkill != null || maxSkill != null)) {
-      skillBits.push(
-        formatSkillFilterSummary({
-          kind: s.wanted_rating_kind,
-          min: minSkill,
-          max: maxSkill,
-        })
-      );
-    }
-  }
-  const filters = [
-    s.min_age || s.max_age ? `Возраст: ${formatAgeRange(s.min_age, s.max_age) ?? "—"}` : null,
-    wanted ? `Роли: ${wanted}` : "Роли: любые",
-    ...skillBits,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const otherGames = (state.me?.games || []).filter((item) => item.has_profile && item.id !== currentGame());
+
+  const statusLabel = (status) => {
+    if (status === "hidden") return "Скрыта";
+    if (status === "active") return "Актив";
+    return status || "—";
+  };
 
   root.innerHTML = shell(
     "Профиль",
     `
-    ${gameSwitchHtml()}
-    ${profileCard(p)}
-    <div class="panel" style="margin-top:12px">
-      <h2>Поиск</h2>
-      <p class="muted" style="margin:0">${escapeHtml(filters || "Фильтры не заданы")}</p>
-    </div>
-    <div class="stack" style="margin-top:14px">
-      <button class="btn btn-primary btn-block" id="edit">Редактировать анкету</button>
-      <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
-      <button class="btn btn-ghost btn-block" id="toggle">${hidden ? "Показать анкету" : "Скрыть анкету"}</button>
-      ${otherGames.length ? `<button class="btn btn-ghost btn-block" id="copy-all">Скопировать описание в другие анкеты</button>` : ""}
-      <button class="btn btn-ghost btn-block" id="rules">Правила</button>
-      <button class="btn btn-ghost btn-block" id="feedback">Сообщить о баге</button>
-      ${otherGames.length ? `<button class="btn btn-ghost btn-block" id="delete-game" style="color:var(--danger)">Удалить анкету ${escapeHtml(p.game_label || "")}</button>` : ""}
-      <button class="btn btn-ghost btn-block" id="delete" style="color:var(--danger)">Удалить все анкеты</button>
+    <div class="anketa-home">
+      <div class="anketa-home-head">
+        <h2>${escapeHtml(person?.name || "Игрок")}${person?.age != null ? `, ${escapeHtml(String(person.age))}` : ""}</h2>
+        <p class="city">${escapeHtml(person?.city || "—")}</p>
+        <p class="section-label">Мои анкеты:</p>
+      </div>
+      <div class="anketa-list">
+        ${ready
+          .map(
+            (item) => `
+          <button type="button" class="anketa-row" data-open-game="${item.id}">
+            <span class="anketa-name">${escapeHtml(item.label)}</span>
+            <span class="anketa-status ${item.status === "active" ? "on" : ""}">${escapeHtml(statusLabel(item.status))}</span>
+          </button>`
+          )
+          .join("")}
+        ${
+          missing.length
+            ? `<button type="button" class="anketa-row add" id="add-game">Добавить игру</button>`
+            : ""
+        }
+      </div>
+      <div class="anketa-footer stack">
+        <button class="btn btn-ghost btn-block" id="feedback">Сообщить о баге</button>
+        <button class="btn btn-ghost btn-block" id="delete" style="color:var(--danger)">Удалить все анкеты</button>
+      </div>
     </div>`
   );
   bindNav(root);
-  bindGameSwitch(root);
-  root.querySelector("#edit").onclick = () => {
-    const profile = state.me.profile;
+
+  root.querySelectorAll("[data-open-game]").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await openProfileGame(btn.dataset.openGame, "edit");
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  });
+
+  const addGame = root.querySelector("#add-game");
+  if (addGame) {
+    addGame.onclick = async () => {
+      try {
+        if (missing.length === 1) {
+          await startGameRegistration(missing[0].id);
+          return;
+        }
+        const pick = missing
+          .map((item) => `<button type="button" class="btn btn-ghost btn-block" data-add="${item.id}">${escapeHtml(item.label)}</button>`)
+          .join("");
+        const overlay = document.createElement("div");
+        overlay.className = "modal";
+        overlay.innerHTML = `
+          <div class="modal-sheet stack">
+            <h2 style="margin:0;font-family:var(--font-display)">Какую игру добавить?</h2>
+            ${pick}
+            <button type="button" class="btn btn-ghost btn-block" id="add-cancel">Отмена</button>
+          </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector("#add-cancel").onclick = () => overlay.remove();
+        overlay.onclick = (ev) => {
+          if (ev.target === overlay) overlay.remove();
+        };
+        overlay.querySelectorAll("[data-add]").forEach((el) => {
+          el.onclick = async () => {
+            overlay.remove();
+            try {
+              await startGameRegistration(el.dataset.add);
+            } catch (e) {
+              toast(e.message);
+            }
+          };
+        });
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  }
+
+  root.querySelector("#feedback").onclick = async () => {
+    const text = prompt("Опиши баг:");
+    if (!text) return;
+    try {
+      await api("/api/feedback", { method: "POST", body: JSON.stringify({ text }) });
+      toast("Спасибо, отправили");
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+
+  root.querySelector("#delete").onclick = async () => {
+    if (!confirm("Удалить все анкеты безвозвратно?")) return;
+    try {
+      await api("/api/profile", { method: "DELETE" });
+      await refreshMe();
+      state.profileView = "main";
+      toast("Анкета удалена");
+      render();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+}
+
+async function startGameRegistration(gameId) {
+  state.me = await api("/api/me/game", {
+    method: "POST",
+    body: JSON.stringify({ game: gameId }),
+  });
+  state.register = emptyRegister(gameId, "game");
+  state.register._started = true;
+  state.profileView = "main";
+  haptic("light");
+  render();
+}
+
+async function openProfileGame(gameId, view = "edit") {
+  if (gameId !== currentGame() || !state.me?.profile) {
+    state.me = await api("/api/me/game", {
+      method: "POST",
+      body: JSON.stringify({ game: gameId }),
+    });
+  }
+  const profile = state.me?.profile;
+  if (!profile) throw new Error("Анкета не найдена");
+  const spec = gameSpec(gameId);
+  if (view === "settings") {
+    const s = profile.settings || {};
+    const kinds = (profile.ratings || []).map((item) => item.kind);
+    state.settingsForm = {
+      wanted_roles: [...(s.wanted_roles || s.wanted_positions || [])],
+      wanted_rating_kind: s.wanted_rating_kind || kinds[0] || "",
+      min_age: s.min_age ?? AGE_MIN,
+      max_age: s.max_age ?? AGE_MAX,
+      min_skill: s.min_skill ?? s.min_mmr,
+      max_skill: s.max_skill ?? s.max_mmr,
+      skill_filters: [...(s.skill_filters || [])],
+      rating_kinds: kinds,
+    };
+    state.profileView = "settings";
+  } else {
     const ratings = {};
     for (const item of spec?.ratings || []) ratings[item.kind] = String(item.default ?? item.min);
     for (const item of profile.ratings || []) ratings[item.kind] = String(item.value);
@@ -1542,96 +1640,8 @@ async function renderProfile() {
       photo_preview: profile.photo_url || "",
     };
     state.profileView = "edit";
-    render();
-  };
-  root.querySelector("#settings").onclick = () => {
-    const s = state.me.profile.settings || {};
-    const profile = state.me.profile;
-    const kinds = (profile.ratings || []).map((item) => item.kind);
-    state.settingsForm = {
-      wanted_roles: [...(s.wanted_roles || s.wanted_positions || [])],
-      wanted_rating_kind: s.wanted_rating_kind || kinds[0] || "",
-      min_age: s.min_age ?? AGE_MIN,
-      max_age: s.max_age ?? AGE_MAX,
-      min_skill: s.min_skill ?? s.min_mmr,
-      max_skill: s.max_skill ?? s.max_mmr,
-      skill_filters: [...(s.skill_filters || [])],
-      rating_kinds: kinds,
-    };
-    state.profileView = "settings";
-    render();
-  };
-  root.querySelector("#toggle").onclick = async () => {
-    try {
-      await api("/api/profile/status", {
-        method: "POST",
-        body: JSON.stringify({ status: hidden ? "active" : "hidden", game: currentGame() }),
-      });
-      await refreshMe();
-      toast(hidden ? "Анкета видна" : "Анкета скрыта");
-      render();
-    } catch (e) {
-      toast(e.message);
-    }
-  };
-  root.querySelector("#rules").onclick = async () => {
-    try {
-      await openRules();
-    } catch (e) {
-      toast(e.message);
-    }
-  };
-  root.querySelector("#feedback").onclick = async () => {
-    const text = prompt("Опиши баг:");
-    if (!text) return;
-    try {
-      await api("/api/feedback", { method: "POST", body: JSON.stringify({ text }) });
-      toast("Спасибо, отправили");
-    } catch (e) {
-      toast(e.message);
-    }
-  };
-  const copyAll = root.querySelector("#copy-all");
-  if (copyAll) {
-    copyAll.onclick = async () => {
-      try {
-        await api("/api/profile/copy", {
-          method: "POST",
-          body: JSON.stringify({ from_game: currentGame(), bio: true, photo: true }),
-        });
-        toast("Описание скопировано в другие анкеты");
-      } catch (e) {
-        toast(e.message);
-      }
-    };
   }
-  const deleteGame = root.querySelector("#delete-game");
-  if (deleteGame) {
-    deleteGame.onclick = async () => {
-      if (!confirm("Удалить только анкету этой игры?")) return;
-      try {
-        await api(`/api/games/${encodeURIComponent(currentGame())}`, { method: "DELETE" });
-        await refreshMe();
-        state.profileView = "main";
-        toast("Анкета игры удалена");
-        render();
-      } catch (e) {
-        toast(e.message);
-      }
-    };
-  }
-  root.querySelector("#delete").onclick = async () => {
-    if (!confirm("Удалить все анкеты безвозвратно?")) return;
-    try {
-      await api("/api/profile", { method: "DELETE" });
-      await refreshMe();
-      state.profileView = "main";
-      toast("Анкета удалена");
-      render();
-    } catch (e) {
-      toast(e.message);
-    }
-  };
+  render();
 }
 
 function renderRatingFields(kinds, values, game = currentGame()) {
@@ -1724,6 +1734,11 @@ function renderEditProfile() {
         <label class="btn btn-ghost btn-block file-btn" style="margin-top:8px">Сменить фото<input type="file" id="photo" accept="image/*" /></label>
       </div>
       <button class="btn btn-primary btn-block" id="save">Сохранить</button>
+      <button class="btn btn-ghost btn-block" id="settings">Настройки поиска</button>
+      <button class="btn btn-ghost btn-block" id="toggle">${state.me?.profile?.status === "hidden" ? "Показать анкету" : "Скрыть анкету"}</button>
+      ${(state.me?.games || []).filter((item) => item.has_profile).length > 1
+        ? `<button class="btn btn-ghost btn-block" id="delete-game" style="color:var(--danger)">Удалить анкету ${escapeHtml(spec?.label || "")}</button>`
+        : ""}
     </div>`
   );
   bindNav(root);
@@ -1745,6 +1760,46 @@ function renderEditProfile() {
     state.edit = null;
     render();
   };
+
+  root.querySelector("#settings").onclick = async () => {
+    try {
+      await openProfileGame(currentGame(), "settings");
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  root.querySelector("#toggle").onclick = async () => {
+    const hidden = state.me?.profile?.status === "hidden";
+    try {
+      await api("/api/profile/status", {
+        method: "POST",
+        body: JSON.stringify({ status: hidden ? "active" : "hidden", game: currentGame() }),
+      });
+      await refreshMe();
+      toast(hidden ? "Анкета видна" : "Анкета скрыта");
+      render();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  const deleteGame = root.querySelector("#delete-game");
+  if (deleteGame) {
+    deleteGame.onclick = async () => {
+      if (!confirm("Удалить только анкету этой игры?")) return;
+      try {
+        await api(`/api/games/${encodeURIComponent(currentGame())}`, { method: "DELETE" });
+        await refreshMe();
+        state.profileView = "main";
+        state.edit = null;
+        toast("Анкета игры удалена");
+        render();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+  }
 
   root.querySelector("#photo").onchange = async () => {
     const file = root.querySelector("#photo").files?.[0];
@@ -1854,7 +1909,7 @@ function renderSearchSettings() {
   bindSliders(root);
 
   root.querySelector("#back").onclick = () => {
-    state.profileView = "main";
+    state.profileView = "edit";
     state.settingsForm = null;
     render();
   };
@@ -1885,7 +1940,7 @@ function renderSearchSettings() {
       });
       await refreshMe();
       state.browse = null;
-      state.profileView = "main";
+      state.profileView = "edit";
       state.settingsForm = null;
       toast("Поиск обновлён");
       haptic("medium");
