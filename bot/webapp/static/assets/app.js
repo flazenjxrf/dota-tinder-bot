@@ -237,10 +237,10 @@ function profileCard(profile, extraHtml = "") {
 function navHtml() {
   const badge = state.me?.pending_likes ? `<span class="dot"></span>` : "";
   const items = [
-    ["browse", "Поиск", "/assets/icons/nav-browse.png"],
-    ["likes", "Лайки", "/assets/icons/nav-likes.png"],
-    ["matches", "Мэтчи", "/assets/icons/nav-matches.png"],
-    ["profile", "Профиль", "/assets/icons/nav-profile.png"],
+    ["browse", "Поиск", "/assets/icons/nav-browse.svg"],
+    ["likes", "Лайки", "/assets/icons/nav-likes.svg"],
+    ["matches", "Мэтчи", "/assets/icons/nav-matches.svg"],
+    ["profile", "Профиль", "/assets/icons/nav-profile.svg"],
   ];
   return `
     <nav class="nav">
@@ -558,9 +558,9 @@ async function renderBrowse() {
       ${profileCard(profile)}
       <div class="actions">
         <button class="btn btn-undo" id="undo" ${state.lastSwipedId ? "" : "disabled"} title="Отмена">${actionIcon("undo")}</button>
-        <button class="btn btn-dislike" id="dislike" title="Дизлайк">${actionIcon("dislike")}</button>
+        <button class="btn btn-dislike btn-emoji" id="dislike" title="Дизлайк">❌</button>
         <button class="btn btn-msg" id="msg" title="Лайк с сообщением">${actionIcon("message")}</button>
-        <button class="btn btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
+        <button class="btn btn-like btn-emoji" id="like" title="Лайк">❤️</button>
       </div>
       <p class="muted" style="text-align:center;margin-top:10px;font-size:0.85rem">
         Лайков с сообщением сегодня: ${state.me?.like_messages_remaining ?? "—"}
@@ -688,8 +688,8 @@ async function renderLikes() {
       ${profileCard(profile, message ? `<div class="msg-note">💌 «${escapeHtml(message)}»</div>` : "")}
       <div class="actions three">
         <button class="btn btn-ghost" id="prev" ${index <= 0 ? "disabled" : ""}>←</button>
-        <button class="btn btn-dislike" id="skip" title="Пропустить">${actionIcon("dislike")}</button>
-        <button class="btn btn-like" id="like" title="Лайк">${actionIcon("like")}</button>
+        <button class="btn btn-dislike btn-emoji" id="skip" title="Пропустить">❌</button>
+        <button class="btn btn-like btn-emoji" id="like" title="Лайк">❤️</button>
       </div>
       <div class="row" style="margin-top:10px">
         <button class="btn btn-ghost btn-block" id="next" ${index >= total - 1 ? "disabled" : ""}>Дальше →</button>

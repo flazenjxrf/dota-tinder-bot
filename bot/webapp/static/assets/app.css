@@ -215,6 +215,16 @@ button {
   color: #4a6fa8;
 }
 
+.btn-emoji {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.btn-like.btn-emoji,
+.btn-dislike.btn-emoji {
+  color: inherit;
+}
+
 .btn-like:not(:disabled):active,
 .btn-dislike:not(:disabled):active,
 .btn-msg:not(:disabled):active,
@@ -222,6 +232,11 @@ button {
   background: var(--accent-dim);
   border-color: rgba(47, 111, 237, 0.4);
   color: var(--accent);
+}
+
+.btn-like.btn-emoji:not(:disabled):active,
+.btn-dislike.btn-emoji:not(:disabled):active {
+  color: inherit;
 }
 
 .btn .ico {
