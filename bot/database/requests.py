@@ -6,7 +6,7 @@ from bot.database.models import (
     User, SearchSettings, ProfileStatus, UserConsent, ProfileDeletion,
     GameProfile, GameRating,
 )
-from bot.games import DEFAULT_GAME, clamp_rating, normalize_game, rating_kinds, valid_roles
+from bot.games import DEFAULT_GAME, clamp_rating, game_has_roles, normalize_game, rating_kinds, valid_roles
 from bot.utils.city import normalize_city, get_normalized_city
 
 
@@ -72,10 +72,14 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
         session.add(profile)
         await session.flush()
 
-    roles = valid_roles(game, data.get("roles") or data.get("positions") or (profile.roles or []))
-    if roles:
-        profile.roles = list(roles)
+    if not game_has_roles(game):
+        profile.roles = []
         flag_modified(profile, "roles")
+    else:
+        roles = valid_roles(game, data.get("roles") or data.get("positions") or (profile.roles or []))
+        if roles:
+            profile.roles = list(roles)
+            flag_modified(profile, "roles")
     if "bio" in data:
         profile.bio = data.get("bio") or ""
     photo = data.get("photo_id") or data.get("photo_file_id")
@@ -111,7 +115,9 @@ async def _upsert_game_profile(session, user: User, game: str, data: dict) -> Ga
         settings = SearchSettings(game_profile_id=profile.id)
         session.add(settings)
 
-    if "wanted_roles" in data or "wanted_positions" in data:
+    if not game_has_roles(game):
+        settings.wanted_roles = None
+    elif "wanted_roles" in data or "wanted_positions" in data:
         wanted = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
         settings.wanted_roles = wanted or None
     if "min_age" in data:

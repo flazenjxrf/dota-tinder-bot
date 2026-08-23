@@ -59,10 +59,11 @@ def make_profile_caption(user, ban_reason: str | None = None, reputation: str = 
     if game_profile:
         pos_str = ", ".join(game_profile.role_labels())
 
+    roles_line = f"🎯 Роли: {pos_str}\n" if pos_str else ""
     caption = (
         f"👤 <b>Твой профиль:</b>\n\n"
         f"🌟 <b>{user.name}</b>, {user.age} | {format_city_display(user)}\n"
-        f"🎯 Роли: {pos_str}\n"
+        f"{roles_line}"
         f"🏆 {rating}{reputation}\n\n"
         f"💬 : {user.bio}\n\n"
         f"📢 Статус анкеты: {status_emoji}\n"

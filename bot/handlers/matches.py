@@ -59,10 +59,11 @@ async def show_match_at_index(message_or_callback, user_id: int, index: int = 0)
     aura_count, vibe_count = await get_reputation_counts(partner.telegram_id)
     reputation = format_reputation_line_from_counts(aura_count, vibe_count)
     has_aura, has_vibe = await get_teammate_rating(user_id, partner.telegram_id)
+    roles_line = f"🎯 Роли: {pos_str}\n" if pos_str else ""
     caption = (
         f"💚 <b>Мэтч</b> ({actual_index + 1}/{total}):\n\n"
         f"🌟 {contact}, {partner.age} | {format_city_display(partner)}\n"
-        f"🎯 Роли: {pos_str}\n"
+        f"{roles_line}"
         f"🏆 {rating}{reputation}\n\n"
         f"💬 О себе: {partner.bio}\n\n"
         f"📩 Написать: {contact}\n"

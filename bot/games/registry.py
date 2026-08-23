@@ -55,14 +55,7 @@ GAMES: dict[str, dict[str, Any]] = {
         "id": "cs2",
         "label": "CS2",
         "short": "CS2",
-        "roles": {
-            1: "Энтри",
-            2: "Снайпер",
-            3: "Саппорт",
-            4: "Люркер",
-            5: "Опорник",
-            6: "Капитан",
-        },
+        "roles": {},
         "ratings": [
             {
                 "kind": "premier",
@@ -75,11 +68,11 @@ GAMES: dict[str, dict[str, Any]] = {
             },
             {
                 "kind": "faceit",
-                "label": "Фейсит",
-                "min": 1,
-                "max": 10,
-                "step": 1,
-                "default": 5,
+                "label": "Фейсит ELO",
+                "min": 0,
+                "max": 3000,
+                "step": 50,
+                "default": 1500,
             },
             {
                 "kind": "competitive",
@@ -132,6 +125,10 @@ def role_map(game: str | None) -> dict[int, str]:
     return dict(game_spec(game)["roles"])
 
 
+def game_has_roles(game: str | None) -> bool:
+    return bool(role_map(game))
+
+
 def role_labels(game: str | None, roles: list[int] | None) -> list[str]:
     mapping = role_map(game)
     return [mapping[role] for role in sorted(roles or []) if role in mapping]
@@ -162,8 +159,6 @@ def format_rating_value(game: str | None, kind: str, value: int) -> str:
     options = spec.get("options")
     if options:
         return options.get(value, str(value))
-    if kind == "faceit":
-        return f"lvl {value}"
     text = f"{value:,}".replace(",", " ")
     if spec.get("open_ended") and value >= spec["max"]:
         return f"{text}+"

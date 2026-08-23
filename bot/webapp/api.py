@@ -43,6 +43,7 @@ from bot.games import (
     DEFAULT_GAME,
     catalog_payload,
     clamp_rating,
+    game_has_roles,
     is_known_game,
     known_game_ids,
     normalize_game,
@@ -391,9 +392,9 @@ async def update_profile(body: ProfileUpdateBody, user: WebAppUser = CurrentUser
     payload.pop("game", None)
     roles = valid_roles(resolved, payload.get("roles") or payload.get("positions"))
     if "roles" in payload or "positions" in payload:
-        if not roles:
+        if game_has_roles(resolved) and not roles:
             raise HTTPException(status_code=400, detail="Выбери хотя бы одну роль")
-        payload["roles"] = roles
+        payload["roles"] = roles if game_has_roles(resolved) else []
     ratings = _normalize_ratings(resolved, body.ratings, body.mmr)
     if ratings:
         payload["ratings"] = ratings
@@ -421,7 +422,10 @@ async def update_settings(body: SettingsUpdateBody, user: WebAppUser = CurrentUs
     data = body.model_dump(exclude_unset=True)
     data.pop("game", None)
     raw_roles = data.get("wanted_roles") if "wanted_roles" in data else data.get("wanted_positions")
-    if raw_roles is not None:
+    if not game_has_roles(resolved):
+        data["wanted_roles"] = None
+        data.pop("wanted_positions", None)
+    elif raw_roles is not None:
         data["wanted_roles"] = valid_roles(resolved, raw_roles) or None
         data.pop("wanted_positions", None)
     if data.get("wanted_rating_kind") and data["wanted_rating_kind"] not in rating_kinds(resolved):
@@ -518,8 +522,11 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
         raise HTTPException(status_code=400, detail="Заполни имя, возраст и город")
 
     roles = valid_roles(game, body.roles or body.positions)
-    if not roles:
-        raise HTTPException(status_code=400, detail="Выбери хотя бы одну роль")
+    if game_has_roles(game):
+        if not roles:
+            raise HTTPException(status_code=400, detail="Выбери хотя бы одну роль")
+    else:
+        roles = []
 
     ratings = _normalize_ratings(game, body.ratings, body.mmr)
     if body.copy_card_from and existing:
@@ -543,7 +550,7 @@ async def register(body: RegisterBody, user: WebAppUser = CurrentUser):
     if not ratings:
         raise HTTPException(status_code=400, detail="Укажи рейтинг")
 
-    wanted = valid_roles(game, body.wanted_roles or body.wanted_positions)
+    wanted = valid_roles(game, body.wanted_roles or body.wanted_positions) if game_has_roles(game) else []
     wanted_kind = body.wanted_rating_kind or (ratings[0]["kind"] if ratings else None)
     if wanted_kind and wanted_kind not in rating_kinds(game):
         raise HTTPException(status_code=400, detail="Неизвестная шкала поиска")

@@ -23,7 +23,13 @@ function gameSpec(id = currentGame()) {
 }
 
 function rolesOf(id = currentGame()) {
-  return gameSpec(id)?.roles || POSITIONS;
+  const roles = gameSpec(id)?.roles;
+  if (Array.isArray(roles)) return roles;
+  return id === "cs2" ? [] : POSITIONS;
+}
+
+function hasRoles(id = currentGame()) {
+  return (rolesOf(id) || []).length > 0;
 }
 
 function ratingOf(kind, id = currentGame()) {
@@ -34,14 +40,13 @@ function formatSkill(spec, value) {
   if (!spec) return String(value);
   const option = (spec.options || []).find((item) => Number(item.id) === Number(value));
   if (option) return option.label;
-  if (spec.kind === "faceit") return `lvl ${value}`;
   const text = Number(value).toLocaleString("ru-RU");
   if (spec.open_ended && Number(value) >= Number(spec.max)) return `${text}+`;
   return text;
 }
 
 function ratingPrompt(kind) {
-  if (kind === "faceit") return "Какой у тебя уровень фейсита?";
+  if (kind === "faceit") return "Какой у тебя ELO на фейсите?";
   if (kind === "premier") return "Какой у тебя рейтинг в премьере?";
   if (kind === "competitive") return "Какое у тебя звание в матчмейкинге?";
   const item = ratingOf(kind);
@@ -677,7 +682,7 @@ function bindCopyFromOther(root, r, opts = { bio: true, photo: true }) {
 }
 
 function registerSteps(r) {
-  const spec = gameSpec(r.game) || { ratings: [], roles: POSITIONS, multi_rating: false, label: "игра" };
+  const spec = gameSpec(r.game) || { ratings: [], roles: rolesOf(r.game), multi_rating: false, label: "игра" };
   const steps = [];
   if (r.mode === "full") {
     steps.push({
@@ -796,20 +801,23 @@ function registerSteps(r) {
     });
   }
 
-  steps.push({
-    id: "roles",
-    render: () => `
-      <div class="panel stack">
-        <h2>На каких ролях обычно играешь?</h2>
-        ${spec.multi_rating ? `<p class="muted">Конечно, кому это надо, но вдруг тут профики собрались 😅</p>` : ""}
-        ${posButtons(r.roles, "roles", spec.roles)}
-        <button class="btn btn-primary btn-block" id="next">Дальше</button>
-      </div>`,
-    bind: (root) => bindPos(root, "roles", r.roles),
-    validate: () => {
-      if (!r.roles.length) throw new Error("Выбери роли");
-    },
-  });
+  if (hasRoles(r.game)) {
+    steps.push({
+      id: "roles",
+      render: () => `
+        <div class="panel stack">
+          <h2>На каких ролях обычно играешь?</h2>
+          ${posButtons(r.roles, "roles", spec.roles)}
+          <button class="btn btn-primary btn-block" id="next">Дальше</button>
+        </div>`,
+      bind: (root) => bindPos(root, "roles", r.roles),
+      validate: () => {
+        if (!r.roles.length) throw new Error("Выбери роли");
+      },
+    });
+  } else {
+    r.roles = [];
+  }
 
   const ratingKindsForStep = () =>
     spec.multi_rating ? r.rating_kinds : (spec.ratings || []).map((item) => item.kind);
@@ -920,10 +928,14 @@ function registerSteps(r) {
     render: () => `
       <div class="panel stack">
         <h2>Теперь настроим поиск</h2>
-        <div class="field">
+        ${
+          hasRoles(r.game)
+            ? `<div class="field">
           <label>Роли</label>
           ${posButtons(r.wanted_roles, "wanted", spec.roles)}
-        </div>
+        </div>`
+            : ""
+        }
         ${dualSliderField({
           minId: "min_age",
           maxId: "max_age",
@@ -939,12 +951,13 @@ function registerSteps(r) {
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
     bind: (root) => {
-      bindPos(root, "wanted", r.wanted_roles);
+      if (hasRoles(r.game)) bindPos(root, "wanted", r.wanted_roles);
     },
     validate: (root) => {
       r.min_age = readRangeValue(root, "min_age");
       r.max_age = readRangeValue(root, "max_age");
       r.skill_filters = readSkillFilters(root, filterKinds(), r.game);
+      if (!hasRoles(r.game)) r.wanted_roles = [];
       if (r.skill_filters.length) {
         r.wanted_rating_kind = r.skill_filters[0].kind;
         r.min_skill = r.skill_filters[0].min ?? ratingOf(r.wanted_rating_kind, r.game)?.min;
@@ -1806,10 +1819,14 @@ function renderEditProfile() {
             </div>`
           : ""
       }
-      <div class="field">
+      ${
+        hasRoles()
+          ? `<div class="field">
         <label>Роли</label>
         ${posButtons(e.roles, "edit-pos", spec?.roles)}
-      </div>
+      </div>`
+          : ""
+      }
       ${renderRatingFields(kinds, e.ratings || {})}
       <div class="field">
         <label>О себе</label>
@@ -1828,7 +1845,7 @@ function renderEditProfile() {
     </div>`
   );
   bindNav(root);
-  bindPos(root, "edit-pos", e.roles);
+  if (hasRoles()) bindPos(root, "edit-pos", e.roles);
   bindSliders(root);
   root.querySelectorAll("[data-pos=edit-queues] button").forEach((btn) => {
     btn.onclick = () => {
@@ -1884,7 +1901,8 @@ function renderEditProfile() {
       const age = Number(e.age);
       if (!age || age < AGE_MIN || age > AGE_MAX) throw new Error(`Возраст ${AGE_MIN}–${AGE_MAX}+`);
       if (!e.city) throw new Error("Укажи город");
-      if (!e.roles.length) throw new Error("Выбери хотя бы одну роль");
+      if (hasRoles() && !e.roles.length) throw new Error("Выбери хотя бы одну роль");
+      if (!hasRoles()) e.roles = [];
       if (!selected.length) throw new Error("Укажи рейтинг");
       if (!e.photo_file_id) throw new Error("Нужно фото");
 
@@ -1933,7 +1951,11 @@ function renderSearchSettings() {
         <button class="btn btn-ghost" id="back">← Назад</button>
       </div>
       <h2>Настройки поиска</h2>
-      <div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>
+      ${
+        hasRoles()
+          ? `<div class="field"><label>Роли</label>${posButtons(f.wanted_roles, "want-pos", spec?.roles)}</div>`
+          : ""
+      }
       ${dualSliderField({
         minId: "min_age",
         maxId: "max_age",
@@ -1950,7 +1972,7 @@ function renderSearchSettings() {
     </div>`
   );
   bindNav(root);
-  bindPos(root, "want-pos", f.wanted_roles);
+  if (hasRoles()) bindPos(root, "want-pos", f.wanted_roles);
   bindSliders(root);
 
   root.querySelector("#back").onclick = () => {
@@ -1969,6 +1991,7 @@ function renderSearchSettings() {
       );
       const skillFilters = readSkillFilters(root, kinds);
       const primary = skillFilters[0];
+      if (!hasRoles()) f.wanted_roles = [];
 
       await api("/api/profile/settings", {
         method: "PATCH",

@@ -71,10 +71,11 @@ def build_browse_caption(profile: User, reputation: str = "") -> str:
     pos_names = game_profile.role_labels() if game_profile else [positions_mapping[p] for p in sorted(profile.positions) if p in positions_mapping]
     rating = " · ".join(game_profile.ratings_display()) if game_profile else f"MMR: {profile.mmr}"
     pos_str = ", ".join(pos_names)
+    roles_line = f"🎯 Роли: {pos_str}\n" if pos_str else ""
     return (
         f"🎮 <b>Напарник найден:</b>\n\n"
         f"🌟 <b>{profile.name}</b>, {profile.age} | {format_city_display(profile)}\n"
-        f"🎯 Роли: {pos_str}\n"
+        f"{roles_line}"
         f"🏆 {rating}{reputation}\n\n"
         f"💬 : {profile.bio}"
     )

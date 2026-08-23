@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 import enum
 from datetime import datetime
 
-from bot.games import DEFAULT_GAME, format_rating, normalize_game, role_labels
+from bot.games import DEFAULT_GAME, format_rating, game_has_roles, normalize_game, role_labels
 
 Base = declarative_base()
 
@@ -181,7 +181,7 @@ class GameProfile(Base):
         return (
             status_value != ProfileStatus.INCOMPLETE.value
             and bool(self.photo_file_id)
-            and bool(self.roles)
+            and (bool(self.roles) if game_has_roles(self.game) else True)
             and bool(self.ratings)
         )
 

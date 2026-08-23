@@ -33,10 +33,11 @@ def format_match_profile_caption(user: User) -> str:
     pos_str = ", ".join(role_labels(game, user.positions) or [POSITIONS_MAPPING[p] for p in sorted(user.positions) if p in POSITIONS_MAPPING])
     rating = " · ".join(profile.ratings_display()) if profile else f"MMR: {user.mmr}"
     name_link = get_user_link(user.telegram_id, user.name, user.username)
+    roles_line = f"🎯 Роли: {pos_str}\n" if pos_str else ""
     return (
         f"👤 <b>Анкета напарника ({game_label(game)}):</b>\n\n"
         f"🌟 {name_link}, {user.age} | 📍 {user.city}\n"
-        f"🎯 Роли: {pos_str}\n"
+        f"{roles_line}"
         f"🏆 {rating}\n\n"
         f"💬 О себе: {user.bio}\n\n"
         f"📩 Написать: {name_link}\n"
