@@ -49,7 +49,7 @@ function formatSkill(spec, value) {
 }
 
 function ratingPrompt(kind) {
-  if (kind === "faceit") return "Какой у тебя ELO на фейсите?";
+  if (kind === "faceit") return "Сколько ELO?";
   if (kind === "premier") return "Какой у тебя рейтинг в премьере?";
   if (kind === "competitive") return "Какое у тебя звание в матчмейкинге?";
   const item = ratingOf(kind);

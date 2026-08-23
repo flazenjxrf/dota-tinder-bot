@@ -68,7 +68,7 @@ GAMES: dict[str, dict[str, Any]] = {
             },
             {
                 "kind": "faceit",
-                "label": "Фейсит ELO",
+                "label": "Фейсит",
                 "min": 0,
                 "max": 3000,
                 "step": 50,
