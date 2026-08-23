@@ -189,6 +189,7 @@ def catalog_payload() -> list[dict[str, Any]]:
             "label": spec["label"],
             "short": spec["short"],
             "roles": [{"id": role_id, "label": label} for role_id, label in spec["roles"].items()],
+            "has_roles": bool(spec["roles"]),
             "ratings": [
                 {
                     "kind": item["kind"],

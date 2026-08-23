@@ -29,6 +29,9 @@ function rolesOf(id = currentGame()) {
 }
 
 function hasRoles(id = currentGame()) {
+  const spec = gameSpec(id);
+  if (spec && typeof spec.has_roles === "boolean") return spec.has_roles;
+  if (spec && Array.isArray(spec.roles)) return spec.roles.length > 0;
   return (rolesOf(id) || []).length > 0;
 }
 
@@ -801,13 +804,14 @@ function registerSteps(r) {
     });
   }
 
-  if (hasRoles(r.game)) {
+  const gameRoles = Array.isArray(spec.roles) ? spec.roles : rolesOf(r.game);
+  if (gameRoles.length) {
     steps.push({
       id: "roles",
       render: () => `
         <div class="panel stack">
           <h2>На каких ролях обычно играешь?</h2>
-          ${posButtons(r.roles, "roles", spec.roles)}
+          ${posButtons(r.roles, "roles", gameRoles)}
           <button class="btn btn-primary btn-block" id="next">Дальше</button>
         </div>`,
       bind: (root) => bindPos(root, "roles", r.roles),
@@ -817,6 +821,7 @@ function registerSteps(r) {
     });
   } else {
     r.roles = [];
+    r.wanted_roles = [];
   }
 
   const ratingKindsForStep = () =>
@@ -929,10 +934,10 @@ function registerSteps(r) {
       <div class="panel stack">
         <h2>Теперь настроим поиск</h2>
         ${
-          hasRoles(r.game)
+          gameRoles.length
             ? `<div class="field">
           <label>Роли</label>
-          ${posButtons(r.wanted_roles, "wanted", spec.roles)}
+          ${posButtons(r.wanted_roles, "wanted", gameRoles)}
         </div>`
             : ""
         }
@@ -951,13 +956,16 @@ function registerSteps(r) {
         <button class="btn btn-primary btn-block" id="finish">Сохранить анкету</button>
       </div>`,
     bind: (root) => {
-      if (hasRoles(r.game)) bindPos(root, "wanted", r.wanted_roles);
+      if (gameRoles.length) bindPos(root, "wanted", r.wanted_roles);
     },
     validate: (root) => {
       r.min_age = readRangeValue(root, "min_age");
       r.max_age = readRangeValue(root, "max_age");
       r.skill_filters = readSkillFilters(root, filterKinds(), r.game);
-      if (!hasRoles(r.game)) r.wanted_roles = [];
+      if (!gameRoles.length) {
+        r.roles = [];
+        r.wanted_roles = [];
+      }
       if (r.skill_filters.length) {
         r.wanted_rating_kind = r.skill_filters[0].kind;
         r.min_skill = r.skill_filters[0].min ?? ratingOf(r.wanted_rating_kind, r.game)?.min;
@@ -1073,12 +1081,17 @@ function renderRegister() {
           .filter(Boolean);
         if (!ratings.length) throw new Error("Укажи рейтинг");
         const primary = skillFilters[0];
+        const noRoles = !(gameSpec(r.game)?.roles || []).length;
+        if (noRoles) {
+          r.roles = [];
+          r.wanted_roles = [];
+        }
         const payload = {
           game: r.game,
-          roles: r.roles,
+          roles: noRoles ? [] : r.roles,
           ratings,
           bio: r.bio || "",
-          wanted_roles: r.wanted_roles,
+          wanted_roles: noRoles ? [] : r.wanted_roles,
           wanted_rating_kind: primary?.kind || r.wanted_rating_kind || ratings[0]?.kind || null,
           min_age: ageFilter.min,
           max_age: ageFilter.max,
